@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""sgw -- the Serious Games Week matchmaker client the games call (stdlib only).
+
+The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.config/sgweek/url.
+  sgw url                                      print the configured matchmaker
+  sgw today                                    today's category where you are (and its games)
+  sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
+  sgw announce --game ma --port 47734 --title "Spring Offensive" [--players N --max N --version V]
+                                               list this host's game and keep it listed (heartbeat) until
+                                               killed (SIGTERM/SIGINT) or stdin closes -- the game spawns it when
+                                               it starts hosting and kills it when the session ends. Exit 3 and
+                                               a message on stderr if today's category does not allow the game.
+Exit codes: 0 ok, 2 no matchmaker configured, 3 refused by the matchmaker, 4 network error.
+"""
+import argparse
+import json
+import os
+import signal
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+
+
+def matchmaker_url():
+    u = os.environ.get("SGW_URL")
+    if not u:
+        p = os.path.expanduser("~/.config/sgweek/url")
+        if os.path.exists(p):
+            with open(p) as f:
+                u = f.readline().strip()
+    return u.rstrip("/") if u else None
+
+
+def local_tz():
+    tz = os.environ.get("TZ")
+    if tz and "/" in tz:
+        return tz.lstrip(":")
+    try:
+        link = os.path.realpath("/etc/localtime")
+        if "zoneinfo/" in link:
+            return link.split("zoneinfo/", 1)[1]
+    except OSError:
+        pass
+    return None
+
+
+def utc_offset_min():
+    return int(-(time.altzone if time.localtime().tm_isdst > 0 else time.timezone) / 60)
+
+
+def call(base, method, path, body=None, timeout=10):
+    req = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Content-Type": "application/json", "User-Agent": "sgw/1"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read())
+        except Exception:
+            return e.code, {"error": str(e)}
+
+
+def where():
+    tz = local_tz()
+    return {"tz": tz} if tz else {"utc_offset_min": utc_offset_min()}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="sgw", description="Serious Games Week matchmaker client")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("url")
+    sub.add_parser("today")
+    l = sub.add_parser("list"); l.add_argument("--game", required=True); l.add_argument("--json", action="store_true")
+    a = sub.add_parser("announce")
+    a.add_argument("--game", required=True); a.add_argument("--port", type=int, required=True)
+    a.add_argument("--title", default=""); a.add_argument("--players", type=int, default=1)
+    a.add_argument("--max", type=int, default=0); a.add_argument("--version", default="")
+    a.add_argument("--host", default=None, help="address players should use (default: as the matchmaker sees you)")
+    a.add_argument("--every", type=float, default=30.0)
+    args = ap.parse_args(argv)
+
+    base = matchmaker_url()
+    if args.cmd == "url":
+        print(base or "")
+        return 0 if base else 2
+    if not base:
+        print("sgw: no matchmaker configured (set SGW_URL or write it to ~/.config/sgweek/url)", file=sys.stderr)
+        return 2
+    try:
+        if args.cmd == "today":
+            q = "&".join("%s=%s" % kv for kv in where().items())
+            code, j = call(base, "GET", "/api/today?" + q)
+            if code != 200:
+                print("sgw: %s" % j.get("error"), file=sys.stderr); return 3
+            print("%s: %s (%s)" % (j["weekday"], j["name"], ", ".join(g["name"] for g in j["games"])))
+            return 0
+        if args.cmd == "list":
+            code, j = call(base, "GET", "/api/games?game=" + args.game)
+            if code != 200:
+                print("sgw: %s" % j.get("error"), file=sys.stderr); return 3
+            if args.json:
+                print(json.dumps(j["games"]))
+            else:
+                for g in j["games"]:
+                    print("%s %d %d %s" % (g["host"], g["port"], g["players"], g["title"].replace("\n", " ")))
+            return 0
+        # announce
+        body = dict(where(), game=args.game, port=args.port, title=args.title, players=args.players,
+                    max_players=args.max, version=args.version)
+        if args.host:
+            body["host"] = args.host
+        code, j = call(base, "POST", "/api/games", body)
+        if code != 201:
+            print("sgw: %s" % j.get("error", "refused (%d)" % code), file=sys.stderr)
+            return 3
+        gid, token = j["id"], j["token"]
+        print("sgw: listed as %s on %s" % (gid, base), flush=True)
+        stop = threading.Event()
+        for s in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(s, lambda *_: stop.set())
+        if not sys.stdin.isatty():
+            threading.Thread(target=lambda: (sys.stdin.read(), stop.set()), daemon=True).start()
+        while not stop.wait(args.every):
+            call(base, "POST", "/api/games/%s/heartbeat" % gid, {"token": token})
+        call(base, "DELETE", "/api/games/%s" % gid, {"token": token})
+        print("sgw: withdrawn", flush=True)
+        return 0
+    except (urllib.error.URLError, OSError) as e:
+        print("sgw: cannot reach %s: %s" % (base, e), file=sys.stderr)
+        return 4
+
+
+if __name__ == "__main__":
+    sys.exit(main())

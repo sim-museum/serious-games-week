@@ -1,0 +1,18 @@
+{
+  "categories": [
+    {"weekday": 0, "id": "poker",   "name": "Poker",
+     "games": [{"id": "pokeriq", "name": "pokerIQ"}]},
+    {"weekday": 1, "id": "wings",   "name": "Air war: Korea and the Battle of Britain",
+     "games": [{"id": "ma", "name": "MiG Alley"}, {"id": "bob", "name": "Battle of Britain"}]},
+    {"weekday": 2, "id": "chess",   "name": "Chess",
+     "games": [{"id": "kramnik", "name": "Kramnik chess"}]},
+    {"weekday": 3, "id": "racing",  "name": "Motor racing",
+     "games": [{"id": "juliaracer", "name": "Julia Racer"}]},
+    {"weekday": 4, "id": "bridge",  "name": "Bridge",
+     "games": [{"id": "bridgeiq", "name": "bridgeIQ"}]},
+    {"weekday": 5, "id": "jets",    "name": "Modern air combat",
+     "games": [{"id": "ff", "name": "FreeFalcon"}]},
+    {"weekday": 6, "id": "go",      "name": "Go",
+     "games": [{"id": "katrain", "name": "KaTrain"}]}
+  ]
+}
