@@ -3,6 +3,7 @@
 
 The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.config/sgweek/url.
   sgw url                                      print the configured matchmaker
+  sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgweek/url)
   sgw today                                    today's category where you are (and its games)
   sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
   sgw announce --game ma --port 47734 --title "Spring Offensive" [--players N --max N --version V]
@@ -71,7 +72,7 @@ def where():
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sgw", description="Serious Games Week matchmaker client")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("url")
+    u = sub.add_parser("url"); u.add_argument("set", nargs="?", help="the matchmaker's URL, to make it this player's")
     sub.add_parser("today")
     l = sub.add_parser("list"); l.add_argument("--game", required=True); l.add_argument("--json", action="store_true")
     a = sub.add_parser("announce")
@@ -82,6 +83,18 @@ def main(argv=None):
     a.add_argument("--every", type=float, default=30.0)
     args = ap.parse_args(argv)
 
+    if args.cmd == "url" and args.set:
+        if not args.set.startswith(("http://", "https://")):
+            print("sgw: a matchmaker URL starts with http:// or https://", file=sys.stderr)
+            return 2
+        p = os.path.expanduser("~/.config/sgweek/url")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(args.set.rstrip("/") + "\n")
+        print("sgw: matchmaker set to %s (MiG Alley, Battle of Britain and FreeFalcon read it when they start)" % args.set.rstrip("/"))
+        if os.environ.get("SGW_URL"):
+            print("sgw: note: SGW_URL is set in this shell and overrides it", file=sys.stderr)
+        return 0
     base = matchmaker_url()
     if args.cmd == "url":
         print(base or "")
