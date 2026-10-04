@@ -29,7 +29,7 @@ repository:
 
 | Day | Game | Repository | Plays on squeak |
 |---|---|---|---|
-| Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`MON/pokerIQ`) | in progress |
+| Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`MON/pokerIQ`) | yes |
 | Tuesday | MiG Alley (Rowan, native Linux port) | [mig_src](https://github.com/sim-museum/mig_src) | yes |
 | Tuesday | Battle of Britain (Rowan, native Linux port) | [BOB_Src](https://github.com/sim-museum/BOB_Src) | yes |
 | Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`WED`) | planned |
