@@ -1,4 +1,4 @@
-# Serious Games Week — matchmaker
+# squeak — Serious Games Week
 
 **sgweek** is pronounced **"squeak"**. It is short for **Serious Games Week**.
 
@@ -22,6 +22,21 @@ any game that is running. Everyone rotates through all seven categories, and the
 | Sunday | Go | KaTrain |
 
 (Edit `categories.json` to change the week.)
+
+## The games
+squeak is the public face of a long-running serious-games research project (sim-museum). Each game lives in its own
+repository:
+
+| Day | Game | Repository | Plays on squeak |
+|---|---|---|---|
+| Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`MON/pokerIQ`) | in progress |
+| Tuesday | MiG Alley (Rowan, native Linux port) | [mig_src](https://github.com/sim-museum/mig_src) | yes |
+| Tuesday | Battle of Britain (Rowan, native Linux port) | [BOB_Src](https://github.com/sim-museum/BOB_Src) | yes |
+| Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`WED`) | planned |
+| Thursday | Julia Racer | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`THU`) | planned |
+| Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`FRI/bridgeIQ`) | planned |
+| Saturday | FreeFalcon | [freefalcon-central](https://github.com/sim-museum/freefalcon-central) | yes |
+| Sunday | KaTrain (Go) | a fork of [sanderland/katrain](https://github.com/sanderland/katrain) | planned |
 
 ## Run a matchmaker
     python3 server.py --port 8080 --db sgweek.db      # Python 3.9+, no other dependencies
@@ -52,8 +67,7 @@ How each game uses it:
 
 ## How to host a game
 You host **in the game**, not on the website. The matchmaker lists your game for you.
-1. Once per machine, point it at the matchmaker: `sgw url http://192.168.254.57:8090` (this LAN's), or any other
-   sgweek URL.
+1. Once per machine, point it at the matchmaker: `sgw url http://<matchmaker-host>:8090`.
 2. On the day whose category includes your game (where you are), host as usual:
    * **MiG Alley / Battle of Britain:** Multi-Player → Create Game → pick a game type → Continue. For a co-op campaign,
      the session opens when you reach the campaign ready room.
