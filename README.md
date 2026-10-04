@@ -64,7 +64,7 @@ You host **in the game**, not on the website. The matchmaker lists your game for
 
 If today's category does not include your game, the matchmaker refuses the listing and the game's log says why. You
 can still host for players who know your address. On a LAN nothing more is needed. Over the internet, forward the
-game's port on your router: UDP 47624 for BoB, 47734 for MA by default, 2934 for FF.
+game's port on your router: UDP 47624 for MA and BoB (MA_DPLAY_PORT / BOB_DPLAY_PORT change it), 2934 for FF.
 
 Games without built-in support can be listed by hand while you host them:
 `sgw announce --game katrain --port 6000 --title "Teaching game"` (Ctrl-C withdraws it).
