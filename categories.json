@@ -5,7 +5,7 @@
     {"weekday": 1, "id": "wings",   "name": "Air war: Korea and the Battle of Britain",
      "games": [{"id": "ma", "name": "MiG Alley"}, {"id": "bob", "name": "Battle of Britain"}]},
     {"weekday": 2, "id": "chess",   "name": "Chess",
-     "games": [{"id": "kramnik", "name": "Kramnik chess"}]},
+     "games": [{"id": "chessiq", "name": "chessIQ (Kramnik chess)"}]},
     {"weekday": 3, "id": "racing",  "name": "Motor racing",
      "games": [{"id": "juliaracer", "name": "Julia Racer"}]},
     {"weekday": 4, "id": "bridge",  "name": "Bridge",
