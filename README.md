@@ -36,7 +36,7 @@ repository:
 | Thursday | Julia Racer | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`THU`) | yes |
 | Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`FRI/bridgeIQ`) | yes |
 | Saturday | FreeFalcon | [freefalcon-central](https://github.com/sim-museum/freefalcon-central) | yes |
-| Sunday | KaTrain (Go) | a fork of [sanderland/katrain](https://github.com/sanderland/katrain) | planned |
+| Sunday | KaTrain (Go) | [katrain](https://github.com/sim-museum/katrain), a fork of sanderland/katrain with network play | yes |
 
 ## Run a matchmaker
     python3 server.py --port 8080 --db sgweek.db      # Python 3.9+, no other dependencies
