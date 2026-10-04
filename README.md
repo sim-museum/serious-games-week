@@ -34,7 +34,7 @@ repository:
 | Tuesday | Battle of Britain (Rowan, native Linux port) | [BOB_Src](https://github.com/sim-museum/BOB_Src) | yes |
 | Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`WED`) | planned |
 | Thursday | Julia Racer | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`THU`) | planned |
-| Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`FRI/bridgeIQ`) | planned |
+| Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`FRI/bridgeIQ`) | yes |
 | Saturday | FreeFalcon | [freefalcon-central](https://github.com/sim-museum/freefalcon-central) | yes |
 | Sunday | KaTrain (Go) | a fork of [sanderland/katrain](https://github.com/sanderland/katrain) | planned |
 
