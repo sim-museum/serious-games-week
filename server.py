@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Serious Games Week matchmaker -- an iGOR-style lobby for a weekly collection of Linux-native serious games.
 
+"sgweek" is pronounced "squeak". The name is a reminder to set every game's strength so that you barely succeed, so
+that you only just squeak by.
+
 Anyone can run one: `python3 server.py --port 8080 --db sgweek.db`. Games are told its URL by the player
 (SGW_URL, or ~/.config/sgweek/url), so several independent matchmakers can exist.
 

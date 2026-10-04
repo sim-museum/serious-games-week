@@ -1,5 +1,12 @@
 # Serious Games Week — matchmaker
 
+**sgweek** is pronounced **"squeak"**. It is short for **Serious Games Week**.
+
+The name is also a reminder of how to play. Set each game's strength (the opponent's level, the AI's skill, the
+handicap) so that you **barely succeed**: you only just *squeak by*. A win that costs nothing teaches nothing, and a
+loss you could never avoid teaches little more. The learning happens at the edge of your ability, so keep yourself
+there.
+
 An iGOR-style lobby for a weekly collection of **Linux-native serious games**: one category for each day of the
 week. You can **start** a game only in **today's** category *where you are* (your own time zone); you can **join**
 any game that is running. Everyone rotates through all seven categories, and the site promotes no game over another.
