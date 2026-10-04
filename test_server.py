@@ -131,6 +131,38 @@ class MatchmakerTest(unittest.TestCase):
         self.assertIn("sgw url " + self.base, page)
         self.assertIn("pronounced &ldquo;squeak&rdquo;", page)
 
+    def test_chat_says_and_reads_since(self):
+        time.sleep(1.05)   # the rate limit is per address, and every test client is 127.0.0.1
+        first = self.call("GET", "/api/chat")[1]["messages"]
+        since = first[-1]["id"] if first else 0
+        code, j = self.call("POST", "/api/chat", {"name": "  Ace  ", "text": "anyone for a\nscramble?"})
+        self.assertEqual(code, 201, j)
+        new = self.call("GET", "/api/chat?since=%d" % since)[1]["messages"]
+        self.assertEqual([(m["name"], m["text"]) for m in new], [("Ace", "anyone for a scramble?")])
+        self.assertEqual(self.call("GET", "/api/chat?since=%d" % new[-1]["id"])[1]["messages"], [])
+
+    def test_chat_rate_limit_and_validation(self):
+        time.sleep(1.05)
+        self.assertEqual(self.call("POST", "/api/chat", {"name": "B", "text": "one"})[0], 201)
+        self.assertEqual(self.call("POST", "/api/chat", {"name": "B", "text": "two"})[0], 429)
+        time.sleep(1.05)
+        self.assertEqual(self.call("POST", "/api/chat", {"name": "", "text": "x"})[0], 400)
+        code, _ = self.call("POST", "/api/chat", {"name": "C" * 99, "text": "y" * 999})
+        self.assertEqual(code, 201)
+        m = self.call("GET", "/api/chat")[1]["messages"][-1]
+        self.assertEqual((len(m["name"]), len(m["text"])), (24, 300))
+
+    def test_chat_keeps_only_the_newest(self):
+        st = server.Store(os.path.join(self.tmp, "chat.db"))
+        st.CHAT_KEEP = 5
+        for i in range(12):
+            st.say("n", "m%d" % i, "a")
+        self.assertEqual([m["text"] for m in st.chat()], ["m%d" % i for i in range(7, 12)])
+
+    def test_page_has_the_chat_panel(self):
+        with urllib.request.urlopen(self.base + "/") as r:
+            self.assertIn('id=chat', r.read().decode())
+
     def test_page_lists_every_category_equally(self):
         with urllib.request.urlopen(self.base + "/") as r:
             page = r.read().decode()

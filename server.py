@@ -21,7 +21,9 @@ API (JSON over HTTP):
                                               host?} -> {id, token, expires_in}; 403 if not today's category
   POST   /api/games/<id>/heartbeat            {token, players?} keeps it listed (sessions expire without one)
   DELETE /api/games/<id>                      {token} ends it
-  GET    /                                    the week and its live games, for people
+  GET    /api/chat[?since=<id>]               the lobby chat: messages newer than id (the newest 100 at most)
+  POST   /api/chat                            {name, text} says something in the lobby (1/s per address)
+  GET    /                                    the week, its live games and the chat, for people
 The host address defaults to the address the request came from (what other players must reach), as on iGOR.
 """
 import argparse
@@ -74,6 +76,8 @@ class Store:
             self.db.execute("""CREATE TABLE IF NOT EXISTS games (
                 id TEXT PRIMARY KEY, token TEXT, game TEXT, category TEXT, title TEXT, host TEXT, port INTEGER,
                 version TEXT, players INTEGER, max_players INTEGER, started REAL, seen REAL)""")
+            self.db.execute("""CREATE TABLE IF NOT EXISTS chat (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, name TEXT, text TEXT, addr TEXT)""")
             cols = [r[1] for r in self.db.execute("PRAGMA table_info(games)")]
             if "name" not in cols:      # older databases: add the host player's name
                 self.db.execute("ALTER TABLE games ADD COLUMN name TEXT DEFAULT ''")
@@ -104,6 +108,21 @@ class Store:
             self.db.commit()
             return cur.rowcount == 1
 
+    CHAT_KEEP = 1000
+
+    def say(self, name, text, addr):
+        with self.lock:
+            cur = self.db.execute("INSERT INTO chat (ts,name,text,addr) VALUES (?,?,?,?)", (time.time(), name, text, addr))
+            self.db.execute("DELETE FROM chat WHERE id <= ?", (cur.lastrowid - self.CHAT_KEEP,))
+            self.db.commit()
+            return cur.lastrowid
+
+    def chat(self, since=0, limit=100):
+        with self.lock:
+            rows = self.db.execute("SELECT id,ts,name,text FROM chat WHERE id > ? ORDER BY id DESC LIMIT ?",
+                                   (since, limit)).fetchall()
+        return [{"id": r[0], "ts": r[1], "name": r[2], "text": r[3]} for r in reversed(rows)]
+
     def list(self, game=None):
         self.purge()
         q = "SELECT id,game,category,title,host,port,version,players,max_players,started,name FROM games"
@@ -125,6 +144,8 @@ class Store:
 
 def make_handler(store, categories):
     games_to_cat = {g["id"]: c for c in categories for g in c["games"]}
+    last_said = {}                 # address -> time of its last chat message (1 per second)
+    said_lock = threading.Lock()
 
     class H(BaseHTTPRequestHandler):
         server_version = "sgweek/1"
@@ -162,6 +183,12 @@ def make_handler(store, categories):
                 return self._json(200, {"weekday": WEEKDAYS[wd], "category": c["id"], "name": c["name"], "games": c["games"]})
             if u.path == "/api/games":
                 return self._json(200, {"games": store.list(q.get("game"))})
+            if u.path == "/api/chat":
+                try:
+                    since = int(q.get("since") or 0)
+                except ValueError:
+                    since = 0
+                return self._json(200, {"messages": store.chat(since)})
             if u.path in ("/", "/index.html"):
                 return self._page()
             return self._json(404, {"error": "not found"})
@@ -199,6 +226,18 @@ def make_handler(store, categories):
                            "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
                            "name": str(b.get("name") or "")[:40]})
                 return self._json(201, {"id": gid, "token": token, "expires_in": EXPIRE_S})
+            if u.path == "/api/chat":
+                name = " ".join(str(b.get("name") or "").split())[:24]
+                text = " ".join(str(b.get("text") or "").split())[:300]
+                if not name or not text:
+                    return self._json(400, {"error": "name and text required"})
+                addr = self.client_address[0]
+                with said_lock:
+                    now = time.time()
+                    if now - last_said.get(addr, 0) < 1.0:
+                        return self._json(429, {"error": "one message a second, please"})
+                    last_said[addr] = now
+                return self._json(201, {"id": store.say(name, text, addr)})
             if u.path.startswith("/api/games/") and u.path.endswith("/heartbeat"):
                 gid = u.path.split("/")[3]
                 ok = store.touch(gid, b.get("token"), b.get("players"))
@@ -284,6 +323,11 @@ tr.none td{color:var(--muted)}
 details{margin:16px 0;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
 code{font-family:ui-monospace,monospace;background:rgba(127,127,127,.12);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
 #stamp{color:var(--muted);font-size:.85rem}
+#chat{border-top:1px solid var(--line);padding:12px 8px}#msgs{max-height:260px;overflow-y:auto;font-size:.95rem;margin:4px 0 8px}
+.m{padding:2px 0;overflow-wrap:anywhere}.m .t{color:var(--muted);font-size:.8rem;margin-right:6px}.m b{margin-right:4px}
+#say{display:flex;gap:6px;flex-wrap:wrap}#say input{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;
+background:var(--bg);color:var(--fg)}#nm{width:9em}#tx{flex:1;min-width:12em}#say button{font:inherit;padding:4px 12px;border-radius:6px;
+border:1px solid var(--accent);background:var(--accent);color:var(--bg);cursor:pointer}#chaterr{color:#b3261e;font-size:.85rem;margin:4px 0}
 footer{margin-top:24px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
 </style></head><body><main>
 <h1>Serious Games Week</h1>
@@ -299,6 +343,11 @@ says why.</p></details>
 <div id=sections>
 {{SECTIONS}}
 </div>
+<div id=chat><h2>Lobby chat</h2>
+<div id=msgs aria-live=polite></div>
+<form id=say autocomplete=off><input id=nm maxlength=24 placeholder="your name" required>
+<input id=tx maxlength=300 placeholder="say something to everyone here" required><button>Send</button></form>
+<p id=chaterr></p></div>
 <footer><b>sgweek</b> is pronounced &ldquo;squeak&rdquo;: set each game&rsquo;s strength so you barely succeed &mdash;
 so you only just <i>squeak by</i>. That edge is where you learn.</footer>
 </main><script>
@@ -323,7 +372,23 @@ async function refresh(){try{
     s.querySelector('tbody').innerHTML=mine.length?mine.map(row).join(''):'<tr class=none><td colspan=5>no games running</td></tr>';});
   mark();document.getElementById('stamp').textContent='updated '+new Date().toLocaleTimeString();
 }catch(e){document.getElementById('stamp').textContent='matchmaker unreachable — retrying';}}
-mark();tick();refresh();setInterval(refresh,10000);setInterval(tick,30000);
+let lastId=0;
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+async function chat(){try{
+  const r=await (await fetch('/api/chat?since='+lastId)).json(); const box=document.getElementById('msgs');
+  const atEnd=box.scrollTop+box.clientHeight>=box.scrollHeight-4;
+  for(const m of r.messages){lastId=m.id;const d=document.createElement('div');d.className='m';
+    d.innerHTML='<span class=t>'+new Date(m.ts*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+'</span><b>'+esc(m.name)+'</b>'+esc(m.text);
+    box.appendChild(d);}
+  if(r.messages.length&&atEnd)box.scrollTop=box.scrollHeight;
+}catch(e){}}
+document.getElementById('nm').value=store('sgw-name')||'';
+document.getElementById('say').addEventListener('submit',async ev=>{ev.preventDefault();
+  const nm=document.getElementById('nm'),tx=document.getElementById('tx'),er=document.getElementById('chaterr');
+  store('sgw-name',nm.value);er.textContent='';
+  try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm.value,text:tx.value})});
+    if(r.ok){tx.value='';chat();}else{er.textContent=(await r.json()).error||'not sent';}}catch(e){er.textContent='matchmaker unreachable';}});
+mark();tick();refresh();chat();setInterval(refresh,10000);setInterval(tick,30000);setInterval(chat,3000);
 </script></body></html>"""
 
 

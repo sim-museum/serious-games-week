@@ -50,5 +50,28 @@ How each game uses it:
 * **Day check:** the day is taken from the time zone the player's machine reports. Like iGOR's rules, it is a
   convention among players, not a lock.
 
+## How to host a game
+You host **in the game**, not on the website. The matchmaker lists your game for you.
+1. Once per machine, point it at the matchmaker: `sgw url http://192.168.254.57:8090` (this LAN's), or any other
+   sgweek URL.
+2. On the day whose category includes your game (where you are), host as usual:
+   * **MiG Alley / Battle of Britain:** Multi-Player → Create Game → pick a game type → Continue. For a co-op campaign,
+     the session opens when you reach the campaign ready room.
+   * **FreeFalcon:** Comms → Connect with **no remote address** (listening).
+3. The game announces itself, and the page shows it within 10 s. It stays listed while you host (a heartbeat every
+   30 s) and disappears when you close the session or quit.
+4. Players join from the game's own Join screen (MA/BoB) or Comms phonebook (FF), where listed hosts appear.
+
+If today's category does not include your game, the matchmaker refuses the listing and the game's log says why. You
+can still host for players who know your address. On a LAN nothing more is needed. Over the internet, forward the
+game's port on your router: UDP 47624 for BoB, 47734 for MA by default, 2934 for FF.
+
+Games without built-in support can be listed by hand while you host them:
+`sgw announce --game katrain --port 6000 --title "Teaching game"` (Ctrl-C withdraws it).
+
+## Lobby chat
+Everyone on the page shares one chat, kept to the newest 1000 messages, one message a second per address. Your name
+is remembered by your browser. From a terminal: `sgw chat --follow` and `sgw say "anyone for a scramble?"`.
+
 ## API
 See the docstring at the top of `server.py`. Tests: `python3 -m unittest -v test_server`.

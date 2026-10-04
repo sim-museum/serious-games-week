@@ -11,6 +11,8 @@ The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.c
                                                killed (SIGTERM/SIGINT) or stdin closes -- the game spawns it when
                                                it starts hosting and kills it when the session ends. Exit 3 and
                                                a message on stderr if today's category does not allow the game.
+  sgw chat [--follow]                          the lobby chat (--follow keeps printing new messages)
+  sgw say "text" [--name N]                    say something in the lobby chat
 Exit codes: 0 ok, 2 no matchmaker configured, 3 refused by the matchmaker, 4 network error.
 """
 import argparse
@@ -75,6 +77,9 @@ def main(argv=None):
     u = sub.add_parser("url"); u.add_argument("set", nargs="?", help="the matchmaker's URL, to make it this player's")
     sub.add_parser("today")
     l = sub.add_parser("list"); l.add_argument("--game", required=True); l.add_argument("--json", action="store_true")
+    c = sub.add_parser("chat"); c.add_argument("--follow", action="store_true")
+    y = sub.add_parser("say"); y.add_argument("text")
+    y.add_argument("--name", default=os.environ.get("SGW_NAME") or os.environ.get("USER", ""))
     a = sub.add_parser("announce")
     a.add_argument("--game", required=True); a.add_argument("--port", type=int, required=True)
     a.add_argument("--title", default=""); a.add_argument("--players", type=int, default=1)
@@ -122,6 +127,21 @@ def main(argv=None):
                 for g in j["games"]:
                     print("%s %d %d %s" % (g["host"], g["port"], g["players"], g["title"].replace("\n", " ")))
             return 0
+        if args.cmd in ("chat", "say"):
+            if args.cmd == "say":
+                code, j = call(base, "POST", "/api/chat", {"name": args.name, "text": args.text})
+                if code != 201:
+                    print("sgw: %s" % j.get("error"), file=sys.stderr); return 3
+                return 0
+            last = 0
+            while True:
+                code, j = call(base, "GET", "/api/chat?since=%d" % last)
+                for m in j.get("messages", []):
+                    last = m["id"]
+                    print("%s  %s: %s" % (time.strftime("%H:%M", time.localtime(m["ts"])), m["name"], m["text"]), flush=True)
+                if not args.follow:
+                    return 0
+                time.sleep(3)
         # announce
         body = dict(where(), game=args.game, port=args.port, title=args.title, players=args.players,
                     max_players=args.max, version=args.version, name=args.name)
