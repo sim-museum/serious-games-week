@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "squeak-sgw"
+version = "1.0.0"
+description = "sgw: the client games use to list and find sessions on a squeak (Serious Games Week) matchmaker"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+dependencies = []          # standard library only
+authors = [{name = "sim-museum"}]
+classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License",
+               "Topic :: Games/Entertainment", "Environment :: Console"]
+
+[project.urls]
+Homepage = "https://github.com/sim-museum/squeak"
+
+[project.scripts]
+sgw = "sgw:cli"
+
+[tool.setuptools]
+# Only the client is installed: players need `sgw`; a matchmaker host runs server.py from a clone.
+py-modules = ["sgw"]

@@ -29,12 +29,12 @@ repository:
 
 | Day | Game | Repository | Plays on squeak |
 |---|---|---|---|
-| Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`MON/pokerIQ`) | yes |
+| Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/freefalcon-buildscript-fixes/MON/pokerIQ) (`MON/pokerIQ`) | yes |
 | Tuesday | MiG Alley (Rowan, native Linux port) | [mig_src](https://github.com/sim-museum/mig_src) | yes |
 | Tuesday | Battle of Britain (Rowan, native Linux port) | [BOB_Src](https://github.com/sim-museum/BOB_Src) | yes |
-| Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`WED/chessIQ`) | yes |
-| Thursday | Julia Racer | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`THU`) | yes |
-| Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab) (`FRI/bridgeIQ`) | yes |
+| Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/freefalcon-buildscript-fixes/WED/chessIQ) (`WED/chessIQ`) | yes |
+| Thursday | Julia Racer | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/julia-racer/THU) (`THU`, branch `julia-racer`) | yes |
+| Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/freefalcon-buildscript-fixes/FRI/bridgeIQ) (`FRI/bridgeIQ`) | yes |
 | Saturday | FreeFalcon | [freefalcon-central](https://github.com/sim-museum/freefalcon-central) | yes |
 | Sunday | KaTrain (Go) | [katrain](https://github.com/sim-museum/katrain), a fork of sanderland/katrain with network play | yes |
 
@@ -50,9 +50,19 @@ It listens on port 8090. The web page (`http://<this machine>:8090/`) is the liv
 today's highlighted with a countdown to its end in the viewer's own time zone, and every running session with game,
 title, host player, address, players and age. It refreshes every 10 s.
 
+## Install sgw (every player's machine)
+`sgw` is the small client the games call. It uses only the Python standard library (3.8+):
+
+    pipx install git+https://github.com/sim-museum/squeak       # or: pip install --user git+https://github.com/sim-museum/squeak
+    sgw --version
+
+This puts `sgw` on your PATH, where every game looks for it. The flight-sim AppImages carry their own copy, and a
+clone of this repo at `~/squeak` or `~/sgweek` also works. Only the client is installed; to run a matchmaker, use a
+clone (below).
+
 ## Point the games at it
-    ./sgw.py url https://your-matchmaker.example      # writes ~/.config/sgweek/url; or export SGW_URL=...
-The games call `sgw.py` (`sgw announce` while hosting, `sgw list` to find games). Hosts must accept incoming
+    sgw url https://your-matchmaker.example      # writes ~/.config/sgweek/url; or export SGW_URL=...
+The games call `sgw` (`sgw announce` while hosting, `sgw list` to find games). Hosts must accept incoming
 connections on the game's port (port-forward it), exactly as with iGOR.
 
 How each game uses it:

@@ -25,6 +25,8 @@ import time
 import urllib.error
 import urllib.request
 
+__version__ = "1.0.0"
+
 
 def matchmaker_url():
     u = os.environ.get("SGW_URL")
@@ -73,6 +75,7 @@ def where():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sgw", description="Serious Games Week matchmaker client")
+    ap.add_argument("--version", action="version", version="sgw " + __version__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     u = sub.add_parser("url"); u.add_argument("set", nargs="?", help="the matchmaker's URL, to make it this player's")
     sub.add_parser("today")
@@ -168,5 +171,10 @@ def main(argv=None):
         return 4
 
 
-if __name__ == "__main__":
+def cli():
+    """The `sgw` command a pip install puts on PATH."""
     sys.exit(main())
+
+
+if __name__ == "__main__":
+    cli()
