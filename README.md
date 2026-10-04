@@ -53,8 +53,12 @@ title, host player, address, players and age. It refreshes every 10 s.
 ## Install sgw (every player's machine)
 `sgw` is the small client the games call. It uses only the Python standard library (3.8+):
 
-    pipx install git+https://github.com/sim-museum/squeak       # or: pip install --user git+https://github.com/sim-museum/squeak
+    pipx install git+https://github.com/sim-museum/squeak       # pipx: apt install pipx
+    uv tool install git+https://github.com/sim-museum/squeak    # or with uv
     sgw --version
+
+(Plain `pip install --user` is refused on current Debian/Ubuntu, which protect the system Python; pipx and uv install
+into their own environment and put `sgw` in `~/.local/bin`.)
 
 This puts `sgw` on your PATH, where every game looks for it. The flight-sim AppImages carry their own copy, and a
 clone of this repo at `~/squeak` or `~/sgweek` also works. Only the client is installed; to run a matchmaker, use a
