@@ -129,6 +129,7 @@ class MatchmakerTest(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/") as r:
             page = r.read().decode()
         self.assertIn("sgw url " + self.base, page)
+        self.assertIn("pronounced &ldquo;squeak&rdquo;", page)
 
     def test_page_lists_every_category_equally(self):
         with urllib.request.urlopen(self.base + "/") as r:

@@ -284,6 +284,7 @@ tr.none td{color:var(--muted)}
 details{margin:16px 0;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
 code{font-family:ui-monospace,monospace;background:rgba(127,127,127,.12);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
 #stamp{color:var(--muted);font-size:.85rem}
+footer{margin-top:24px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
 </style></head><body><main>
 <h1>Serious Games Week</h1>
 <p class=lead>One kind of serious game for each day of the week, Linux-native games only. You can start a game in
@@ -298,6 +299,8 @@ says why.</p></details>
 <div id=sections>
 {{SECTIONS}}
 </div>
+<footer><b>sgweek</b> is pronounced &ldquo;squeak&rdquo;: set each game&rsquo;s strength so you barely succeed &mdash;
+so you only just <i>squeak by</i>. That edge is where you learn.</footer>
 </main><script>
 const WD=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const wd=(new Date().getDay()+6)%7;  // Monday = 0, in the viewer's own time zone
