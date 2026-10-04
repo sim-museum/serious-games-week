@@ -98,7 +98,7 @@ def main(argv=None):
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w") as f:
             f.write(args.set.rstrip("/") + "\n")
-        print("sgw: matchmaker set to %s (MiG Alley, Battle of Britain and FreeFalcon read it when they start)" % args.set.rstrip("/"))
+        print("sgw: matchmaker set to %s (your games read it when they start)" % args.set.rstrip("/"))
         if os.environ.get("SGW_URL"):
             print("sgw: note: SGW_URL is set in this shell and overrides it", file=sys.stderr)
         return 0
