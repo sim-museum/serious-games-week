@@ -29,12 +29,12 @@ repository:
 
 | Day | Game | Repository | Plays on squeak |
 |---|---|---|---|
-| Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/freefalcon-buildscript-fixes/MON/pokerIQ) (`MON/pokerIQ`) | yes |
+| Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/main/MON/pokerIQ) (`MON/pokerIQ`) | yes |
 | Tuesday | MiG Alley (Rowan, native Linux port) | [mig_src](https://github.com/sim-museum/mig_src) | yes |
 | Tuesday | Battle of Britain (Rowan, native Linux port) | [BOB_Src](https://github.com/sim-museum/BOB_Src) | yes |
-| Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/freefalcon-buildscript-fixes/WED/chessIQ) (`WED/chessIQ`) | yes |
+| Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/main/WED/chessIQ) (`WED/chessIQ`) | yes |
 | Thursday | Julia Racer | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/julia-racer/THU) (`THU`, branch `julia-racer`) | yes |
-| Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/freefalcon-buildscript-fixes/FRI/bridgeIQ) (`FRI/bridgeIQ`) | yes |
+| Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/main/FRI/bridgeIQ) (`FRI/bridgeIQ`) | yes |
 | Saturday | FreeFalcon | [freefalcon-central](https://github.com/sim-museum/freefalcon-central) | yes |
 | Sunday | KaTrain (Go) | [katrain](https://github.com/sim-museum/katrain), a fork of sanderland/katrain with network play | yes |
 
