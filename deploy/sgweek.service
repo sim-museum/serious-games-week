@@ -1,0 +1,15 @@
+# Serious Games Week matchmaker on this LAN. Install (as the user who runs it):
+#   cp deploy/sgweek.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now sgweek
+# Then on every machine that plays:  sgw url http://<this machine's LAN address>:8090
+# To keep it running while nobody is logged in:  loginctl enable-linger $USER
+[Unit]
+Description=Serious Games Week matchmaker (LAN)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/sgweek/server.py --bind 0.0.0.0 --port 8090 --db %h/.local/share/sgweek/sgweek.db
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

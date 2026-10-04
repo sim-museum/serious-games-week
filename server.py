@@ -71,6 +71,9 @@ class Store:
             self.db.execute("""CREATE TABLE IF NOT EXISTS games (
                 id TEXT PRIMARY KEY, token TEXT, game TEXT, category TEXT, title TEXT, host TEXT, port INTEGER,
                 version TEXT, players INTEGER, max_players INTEGER, started REAL, seen REAL)""")
+            cols = [r[1] for r in self.db.execute("PRAGMA table_info(games)")]
+            if "name" not in cols:      # older databases: add the host player's name
+                self.db.execute("ALTER TABLE games ADD COLUMN name TEXT DEFAULT ''")
             self.db.commit()
 
     def purge(self):
@@ -80,8 +83,9 @@ class Store:
 
     def add(self, row):
         with self.lock:
-            self.db.execute("INSERT INTO games VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
-                            ":players,:max_players,:started,:seen)", row)
+            self.db.execute("INSERT INTO games (id,token,game,category,title,host,port,version,players,max_players,"
+                            "started,seen,name) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
+                            ":players,:max_players,:started,:seen,:name)", row)
             self.db.commit()
 
     def touch(self, gid, token, players=None):
@@ -99,7 +103,7 @@ class Store:
 
     def list(self, game=None):
         self.purge()
-        q = "SELECT id,game,category,title,host,port,version,players,max_players,started FROM games"
+        q = "SELECT id,game,category,title,host,port,version,players,max_players,started,name FROM games"
         args = ()
         if game:
             q += " WHERE game=?"
@@ -107,8 +111,13 @@ class Store:
         q += " ORDER BY started"          # oldest first: no game is ranked above another
         with self.lock:
             rows = self.db.execute(q, args).fetchall()
-        keys = ["id", "game", "category", "title", "host", "port", "version", "players", "max_players", "started"]
-        return [dict(zip(keys, r)) for r in rows]
+        keys = ["id", "game", "category", "title", "host", "port", "version", "players", "max_players", "started", "name"]
+        out = [dict(zip(keys, r)) for r in rows]
+        now = time.time()
+        for g in out:
+            g["name"] = g["name"] or ""
+            g["age_s"] = int(now - g["started"])
+        return out
 
 
 def make_handler(store, categories):
@@ -184,7 +193,8 @@ def make_handler(store, categories):
                 store.add({"id": gid, "token": token, "game": game, "category": cat["id"],
                            "title": str(b.get("title") or game)[:80], "host": str(b.get("host") or self.client_address[0])[:64],
                            "port": port, "version": str(b.get("version") or "")[:40], "players": int(b.get("players") or 1),
-                           "max_players": int(b.get("max_players") or 0), "started": now, "seen": now})
+                           "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
+                           "name": str(b.get("name") or "")[:40]})
                 return self._json(201, {"id": gid, "token": token, "expires_in": EXPIRE_S})
             if u.path.startswith("/api/games/") and u.path.endswith("/heartbeat"):
                 gid = u.path.split("/")[3]
@@ -206,16 +216,18 @@ def make_handler(store, categories):
 
         def _page(self):
             live = store.list()
+            host_hdr = self.headers.get("Host") or ("%s:%d" % self.server.server_address[:2])
             rows = []
             for c in categories:
                 gs = [g for g in live if g["category"] == c["id"]]
-                items = "".join("<li><b>%s</b> &mdash; %s, %s:%d, %d player(s)</li>" % (
-                    html.escape(g["game"]), html.escape(g["title"]), html.escape(g["host"]), g["port"], g["players"])
-                    for g in gs) or "<li class=none>no games running</li>"
-                names = ", ".join(html.escape(g["name"]) for g in c["games"])
-                rows.append("<section data-weekday=%d><h2>%s &middot; %s</h2><p class=games>%s</p><ul>%s</ul></section>"
-                            % (c["weekday"], WEEKDAYS[c["weekday"]], html.escape(c["name"]), names, items))
-            page = PAGE.replace("{{SECTIONS}}", "\n".join(rows))
+                rows.append("<section data-weekday=%d data-cat=%s><h2>%s &middot; %s</h2><p class=games>%s</p>"
+                            "<table><tbody>%s</tbody></table></section>"
+                            % (c["weekday"], html.escape(c["id"]), WEEKDAYS[c["weekday"]], html.escape(c["name"]),
+                               ", ".join(html.escape(g["name"]) for g in c["games"]),
+                               "".join(row_html(g, categories) for g in gs) or NONE_ROW))
+            page = (PAGE.replace("{{SECTIONS}}", "\n".join(rows))
+                        .replace("{{URL}}", html.escape("http://" + host_hdr))
+                        .replace("{{CATS}}", json.dumps(categories).replace("</", "<\\/")))
             body = page.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -226,27 +238,86 @@ def make_handler(store, categories):
     return H
 
 
+NONE_ROW = "<tr class=none><td colspan=5>no games running</td></tr>"
+
+
+def game_name(gid, categories):
+    for c in categories:
+        for g in c["games"]:
+            if g["id"] == gid:
+                return g["name"]
+    return gid
+
+
+def fmt_age(sec):
+    m = sec // 60
+    return "%dm" % m if m < 60 else "%dh%02dm" % (m // 60, m % 60)
+
+
+def row_html(g, categories):
+    players = "%d" % g["players"] + ("/%d" % g["max_players"] if g["max_players"] else "")
+    who = (" &middot; " + html.escape(g["name"])) if g["name"] else ""
+    ver = (" <span class=ver>v" + html.escape(g["version"]) + "</span>") if g["version"] else ""
+    return ("<tr><td class=g>%s%s</td><td>%s%s</td><td class=addr>%s:%d</td><td>%s</td><td class=age>%s</td></tr>"
+            % (html.escape(game_name(g["game"], categories)), ver, html.escape(g["title"]), who,
+               html.escape(g["host"]), g["port"], players, fmt_age(g["age_s"])))
+
+
 PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>Serious Games Week</title><style>
-:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a65;--line:#e3e0d8;--today:#e9f2ea}
-@media (prefers-color-scheme:dark){:root{--bg:#191917;--fg:#ecebe6;--muted:#a19f97;--line:#34332f;--today:#203023}}
+:root{--bg:#fbfaf7;--fg:#1d1d1b;--muted:#6b6a65;--line:#e3e0d8;--today:#e9f2ea;--accent:#2f6b3a}
+@media (prefers-color-scheme:dark){:root{--bg:#191917;--fg:#ecebe6;--muted:#a19f97;--line:#34332f;--today:#203023;--accent:#8fd19a}}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
-main{max-width:760px;margin:0 auto;padding:24px 16px}
+main{max-width:820px;margin:0 auto;padding:24px 16px}
 h1{font-size:1.6rem;margin:.2em 0}p.lead{color:var(--muted)}
+.bar{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;margin:8px 0 16px}
+#today{font-weight:600}#countdown{color:var(--accent);font-variant-numeric:tabular-nums}
 section{border-top:1px solid var(--line);padding:12px 8px}section.today{background:var(--today);border-radius:8px}
-h2{font-size:1.1rem;margin:.2em 0}.games{color:var(--muted);margin:.2em 0}ul{margin:.3em 0 .3em 1.2em;padding:0}
-.none{color:var(--muted);list-style:none;margin-left:-1.2em}
+h2{font-size:1.1rem;margin:.2em 0}.games{color:var(--muted);margin:.2em 0 .4em}
+table{width:100%;border-collapse:collapse;font-size:.95rem}td{padding:3px 6px;vertical-align:top}
+td.g{font-weight:600;white-space:nowrap}td.addr{font-family:ui-monospace,monospace;white-space:nowrap}
+td.age{color:var(--muted);white-space:nowrap;text-align:right}.ver{color:var(--muted);font-weight:400;font-size:.85em}
+tr.none td{color:var(--muted)}
+details{margin:16px 0;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+code{font-family:ui-monospace,monospace;background:rgba(127,127,127,.12);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
+#stamp{color:var(--muted);font-size:.85rem}
 </style></head><body><main>
 <h1>Serious Games Week</h1>
 <p class=lead>One kind of serious game for each day of the week, Linux-native games only. You can start a game in
 <b>today's</b> category where you are; you can join any game that is running. Every day gets its turn.</p>
-<p id=today></p>
+<div class=bar><span id=today></span><span id=countdown></span><span id=stamp></span></div>
+<details><summary>Point your games at this matchmaker</summary>
+<p>On each machine, once: <code>sgw url {{URL}}</code> (or <code>export SGW_URL={{URL}}</code>).</p>
+<p>MiG Alley and Battle of Britain list a session when you host one and show listed sessions in Join.
+FreeFalcon lists you when you go online in Comms without a remote address, and adds listed hosts to the phonebook.
+Hosts must accept connections on the game's port. A game outside today's category is not listed, and the game
+says why.</p></details>
+<div id=sections>
 {{SECTIONS}}
+</div>
 </main><script>
+const WD=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const wd=(new Date().getDay()+6)%7;  // Monday = 0, in the viewer's own time zone
-document.querySelectorAll('section').forEach(s=>{if(+s.dataset.weekday===wd)s.classList.add('today')});
-const t=document.querySelector('section.today h2');
-if(t)document.getElementById('today').textContent='Where you are, today is '+t.textContent+'.';
+let cats={{CATS}};   // embedded, so the day and countdown show before the first refresh
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function age(s){const m=Math.floor(s/60);return m<60?m+"m":Math.floor(m/60)+"h"+String(m%60).padStart(2,"0")+"m"}
+function gname(id){for(const c of cats)for(const g of c.games)if(g.id===id)return g.name;return id}
+function mark(){document.querySelectorAll('section').forEach(s=>s.classList.toggle('today',+s.dataset.weekday===wd));
+  const c=cats[wd]; if(c)document.getElementById('today').textContent='Today where you are: '+WD[wd]+' · '+c.name;}
+function tick(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0);const s=Math.max(0,Math.floor((m-n)/1000));
+  document.getElementById('countdown').textContent='ends in '+Math.floor(s/3600)+'h '+String(Math.floor(s%3600/60)).padStart(2,'0')+'m';
+  if(((n.getDay()+6)%7)!==wd)location.reload();}
+function row(g){const p=g.players+(g.max_players?'/'+g.max_players:'');
+  return '<tr><td class=g>'+esc(gname(g.game))+(g.version?' <span class=ver>v'+esc(g.version)+'</span>':'')+'</td><td>'+esc(g.title)+
+  (g.name?' · '+esc(g.name):'')+'</td><td class=addr>'+esc(g.host)+':'+g.port+'</td><td>'+p+'</td><td class=age>'+age(g.age_s)+'</td></tr>';}
+async function refresh(){try{
+  if(!cats.length)cats=(await (await fetch('/api/categories')).json()).categories;
+  const games=(await (await fetch('/api/games')).json()).games;
+  document.querySelectorAll('section').forEach(s=>{const mine=games.filter(g=>g.category===s.dataset.cat);
+    s.querySelector('tbody').innerHTML=mine.length?mine.map(row).join(''):'<tr class=none><td colspan=5>no games running</td></tr>';});
+  mark();document.getElementById('stamp').textContent='updated '+new Date().toLocaleTimeString();
+}catch(e){document.getElementById('stamp').textContent='matchmaker unreachable — retrying';}}
+mark();tick();refresh();setInterval(refresh,10000);setInterval(tick,30000);
 </script></body></html>"""
 
 

@@ -20,6 +20,14 @@ any game that is running. Everyone rotates through all seven categories, and the
     python3 server.py --port 8080 --db sgweek.db      # Python 3.9+, no other dependencies
 Put it behind any HTTPS reverse proxy if it faces the internet. Players point their games at it.
 
+## Host it on your LAN (systemd user service)
+    cp deploy/sgweek.service ~/.config/systemd/user/
+    systemctl --user daemon-reload && systemctl --user enable --now sgweek
+    loginctl enable-linger $USER        # optional: keep it up while nobody is logged in
+It listens on port 8090. The web page (`http://<this machine>:8090/`) is the live lobby: every day's category,
+today's highlighted with a countdown to its end in the viewer's own time zone, and every running session with game,
+title, host player, address, players and age. It refreshes every 10 s.
+
 ## Point the games at it
     ./sgw.py url https://your-matchmaker.example      # writes ~/.config/sgweek/url; or export SGW_URL=...
 The games call `sgw.py` (`sgw announce` while hosting, `sgw list` to find games). Hosts must accept incoming

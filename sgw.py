@@ -6,7 +6,7 @@ The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.c
   sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgweek/url)
   sgw today                                    today's category where you are (and its games)
   sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
-  sgw announce --game ma --port 47734 --title "Spring Offensive" [--players N --max N --version V]
+  sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V]
                                                list this host's game and keep it listed (heartbeat) until
                                                killed (SIGTERM/SIGINT) or stdin closes -- the game spawns it when
                                                it starts hosting and kills it when the session ends. Exit 3 and
@@ -80,6 +80,8 @@ def main(argv=None):
     a.add_argument("--title", default=""); a.add_argument("--players", type=int, default=1)
     a.add_argument("--max", type=int, default=0); a.add_argument("--version", default="")
     a.add_argument("--host", default=None, help="address players should use (default: as the matchmaker sees you)")
+    a.add_argument("--name", default=os.environ.get("SGW_NAME") or os.environ.get("USER", ""),
+                   help="your name as other players see it (default: $SGW_NAME, else your login)")
     a.add_argument("--every", type=float, default=30.0)
     args = ap.parse_args(argv)
 
@@ -122,7 +124,7 @@ def main(argv=None):
             return 0
         # announce
         body = dict(where(), game=args.game, port=args.port, title=args.title, players=args.players,
-                    max_players=args.max, version=args.version)
+                    max_players=args.max, version=args.version, name=args.name)
         if args.host:
             body["host"] = args.host
         code, j = call(base, "POST", "/api/games", body)

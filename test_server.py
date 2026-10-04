@@ -106,6 +106,30 @@ class MatchmakerTest(unittest.TestCase):
         game, _, _ = self.today_game_and_tz()
         self.assertEqual(self.call("POST", "/api/games", {"game": game, "port": 1})[0], 400)
 
+    def test_name_and_age_are_listed(self):
+        game, tz, _ = self.today_game_and_tz()
+        gid = self.call("POST", "/api/games", {"game": game, "port": 47030, "tz": tz, "name": "Ace", "max_players": 16})[1]["id"]
+        mine = [g for g in self.call("GET", "/api/games")[1]["games"] if g["id"] == gid][0]
+        self.assertEqual(mine["name"], "Ace")
+        self.assertEqual(mine["max_players"], 16)
+        self.assertGreaterEqual(mine["age_s"], 0)
+
+    def test_old_database_gains_the_name_column(self):
+        import sqlite3
+        path = os.path.join(self.tmp, "old.db")
+        db = sqlite3.connect(path)
+        db.execute("CREATE TABLE games (id TEXT PRIMARY KEY, token TEXT, game TEXT, category TEXT, title TEXT, host TEXT,"
+                   " port INTEGER, version TEXT, players INTEGER, max_players INTEGER, started REAL, seen REAL)")
+        db.execute("INSERT INTO games VALUES ('x','t','ma','wings','old','1.2.3.4',1,'',1,0,?,?)", (time.time(), time.time()))
+        db.commit(); db.close()
+        st = server.Store(path)
+        self.assertEqual([g["name"] for g in st.list()], [""])
+
+    def test_page_tells_players_how_to_point_their_games_here(self):
+        with urllib.request.urlopen(self.base + "/") as r:
+            page = r.read().decode()
+        self.assertIn("sgw url " + self.base, page)
+
     def test_page_lists_every_category_equally(self):
         with urllib.request.urlopen(self.base + "/") as r:
             page = r.read().decode()
