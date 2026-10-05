@@ -6,7 +6,7 @@ The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.c
   sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgw/url)
   sgw today                                    today's category where you are (and its games)
   sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
-  sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V]
+  sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V --build B]
                                                list this host's game and keep it listed (heartbeat) until
                                                killed (SIGTERM/SIGINT) or stdin closes -- the game spawns it when
                                                it starts hosting and kills it when the session ends. Exit 3 and
@@ -85,6 +85,9 @@ def main(argv=None):
     u = sub.add_parser("url"); u.add_argument("set", nargs="?", help="the matchmaker's URL, to make it this player's")
     sub.add_parser("today")
     l = sub.add_parser("list"); l.add_argument("--game", required=True); l.add_argument("--json", action="store_true")
+    # --build: the git commit this game was built from ($SGW_BUILD). Only sessions built from the same commit are
+    # listed, so two different builds never meet (version skew); the matchmaker reports how many it left out.
+    l.add_argument("--build", default=os.environ.get("SGW_BUILD", ""))
     c = sub.add_parser("chat"); c.add_argument("--follow", action="store_true")
     y = sub.add_parser("say"); y.add_argument("text")
     y.add_argument("--name", default=os.environ.get("SGW_NAME") or os.environ.get("USER", ""))
@@ -92,6 +95,7 @@ def main(argv=None):
     a.add_argument("--game", required=True); a.add_argument("--port", type=int, required=True)
     a.add_argument("--title", default=""); a.add_argument("--players", type=int, default=1)
     a.add_argument("--max", type=int, default=0); a.add_argument("--version", default="")
+    a.add_argument("--build", default=os.environ.get("SGW_BUILD", ""), help="git commit of this build ($SGW_BUILD)")
     a.add_argument("--host", default=None, help="address players should use (default: as the matchmaker sees you)")
     a.add_argument("--name", default=os.environ.get("SGW_NAME") or os.environ.get("USER", ""),
                    help="your name as other players see it (default: $SGW_NAME, else your login)")
@@ -126,9 +130,12 @@ def main(argv=None):
             print("%s: %s (%s)" % (j["weekday"], j["name"], ", ".join(g["name"] for g in j["games"])))
             return 0
         if args.cmd == "list":
-            code, j = call(base, "GET", "/api/games?game=" + args.game)
+            code, j = call(base, "GET", "/api/games?game=" + args.game + ("&build=" + args.build if args.build else ""))
             if code != 200:
                 print("sgw: %s" % j.get("error"), file=sys.stderr); return 3
+            if j.get("hidden_other_builds"):
+                print("sgw: %d %s game(s) not shown: built from a different commit than yours (%s)"
+                      % (j["hidden_other_builds"], args.game, args.build), file=sys.stderr)
             if args.json:
                 print(json.dumps(j["games"]))
             else:
@@ -152,7 +159,7 @@ def main(argv=None):
                 time.sleep(3)
         # announce
         body = dict(where(), game=args.game, port=args.port, title=args.title, players=args.players,
-                    max_players=args.max, version=args.version, name=args.name)
+                    max_players=args.max, version=args.version, name=args.name, build=args.build)
         if args.host:
             body["host"] = args.host
         code, j = call(base, "POST", "/api/games", body)

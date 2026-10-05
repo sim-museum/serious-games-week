@@ -123,7 +123,26 @@ class MatchmakerTest(unittest.TestCase):
         db.execute("INSERT INTO games VALUES ('x','t','ma','wings','old','1.2.3.4',1,'',1,0,?,?)", (time.time(), time.time()))
         db.commit(); db.close()
         st = server.Store(path)
-        self.assertEqual([g["name"] for g in st.list()], [""])
+        self.assertEqual([g["name"] for g in st.list()[0]], [""])
+
+    def test_version_skew_only_same_build_is_listed(self):
+        """Two builds from different commits are never matched: a caller that names its build sees only sessions
+        from the same commit, and is told how many others it does not see."""
+        game, tz, _ = self.today_game_and_tz()
+        mk = lambda title, build: self.call("POST", "/api/games", dict({"game": game, "title": title, "port": 47100,
+                                                                        "tz": tz}, **({"build": build} if build else {})))[1]
+        a, b, c = mk("same", "abc1234"), mk("other", "def5678"), mk("unknown", None)
+        j = self.call("GET", "/api/games?game=%s&build=abc1234" % game)[1]
+        titles = [g["title"] for g in j["games"]]
+        self.assertIn("same", titles)
+        self.assertNotIn("other", titles)
+        self.assertNotIn("unknown", titles)                  # no build: cannot be checked, so not offered
+        self.assertGreaterEqual(j["hidden_other_builds"], 2)
+        self.assertEqual([g["build"] for g in j["games"] if g["title"] == "same"], ["abc1234"])
+        everything = [g["title"] for g in self.call("GET", "/api/games?game=" + game)[1]["games"]]
+        self.assertTrue({"same", "other", "unknown"} <= set(everything))   # an older client still sees all
+        for x in (a, b, c):
+            self.call("DELETE", "/api/games/%s" % x["id"], {"token": x["token"]})
 
     def test_page_tells_players_how_to_point_their_games_here(self):
         with urllib.request.urlopen(self.base + "/") as r:

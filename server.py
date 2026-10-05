@@ -80,6 +80,8 @@ class Store:
             cols = [r[1] for r in self.db.execute("PRAGMA table_info(games)")]
             if "name" not in cols:      # older databases: add the host player's name
                 self.db.execute("ALTER TABLE games ADD COLUMN name TEXT DEFAULT ''")
+            if "build" not in cols:     # older databases: add the build (git commit) the host runs
+                self.db.execute("ALTER TABLE games ADD COLUMN build TEXT DEFAULT ''")
             self.db.commit()
 
     def purge(self):
@@ -90,8 +92,8 @@ class Store:
     def add(self, row):
         with self.lock:
             self.db.execute("INSERT INTO games (id,token,game,category,title,host,port,version,players,max_players,"
-                            "started,seen,name) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
-                            ":players,:max_players,:started,:seen,:name)", row)
+                            "started,seen,name,build) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
+                            ":players,:max_players,:started,:seen,:name,:build)", row)
             self.db.commit()
 
     def touch(self, gid, token, players=None):
@@ -122,9 +124,13 @@ class Store:
                                    (since, limit)).fetchall()
         return [{"id": r[0], "ts": r[1], "name": r[2], "text": r[3]} for r in reversed(rows)]
 
-    def list(self, game=None):
+    def list(self, game=None, build=None):
+        """Sessions of `game`. With `build` (the caller's git commit), only sessions built from that same commit are
+        returned, so two different builds are never matched (version skew); the second value counts the others.
+        A session that announced no build cannot be checked and counts as different. Without `build` (an older
+        client) everything is listed, as before."""
         self.purge()
-        q = "SELECT id,game,category,title,host,port,version,players,max_players,started,name FROM games"
+        q = "SELECT id,game,category,title,host,port,version,players,max_players,started,name,build FROM games"
         args = ()
         if game:
             q += " WHERE game=?"
@@ -132,13 +138,18 @@ class Store:
         q += " ORDER BY started"          # oldest first: no game is ranked above another
         with self.lock:
             rows = self.db.execute(q, args).fetchall()
-        keys = ["id", "game", "category", "title", "host", "port", "version", "players", "max_players", "started", "name"]
+        keys = ["id", "game", "category", "title", "host", "port", "version", "players", "max_players", "started", "name",
+                "build"]
         out = [dict(zip(keys, r)) for r in rows]
+        hidden = 0
+        if build:
+            keep = [g for g in out if (g["build"] or "") == build]
+            hidden, out = len(out) - len(keep), keep
         now = time.time()
         for g in out:
             g["name"] = g["name"] or ""
             g["age_s"] = int(now - g["started"])
-        return out
+        return out, hidden
 
 
 def make_handler(store, categories):
@@ -181,7 +192,8 @@ def make_handler(store, categories):
                 c = categories[wd]
                 return self._json(200, {"weekday": WEEKDAYS[wd], "category": c["id"], "name": c["name"], "games": c["games"]})
             if u.path == "/api/games":
-                return self._json(200, {"games": store.list(q.get("game"))})
+                games, hidden = store.list(q.get("game"), q.get("build"))
+                return self._json(200, {"games": games, "hidden_other_builds": hidden})
             if u.path == "/api/chat":
                 try:
                     since = int(q.get("since") or 0)
@@ -223,7 +235,7 @@ def make_handler(store, categories):
                            "title": str(b.get("title") or game)[:80], "host": str(b.get("host") or self.client_address[0])[:64],
                            "port": port, "version": str(b.get("version") or "")[:40], "players": int(b.get("players") or 1),
                            "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
-                           "name": str(b.get("name") or "")[:40]})
+                           "name": str(b.get("name") or "")[:40], "build": str(b.get("build") or "")[:64]})
                 return self._json(201, {"id": gid, "token": token, "expires_in": EXPIRE_S})
             if u.path == "/api/chat":
                 name = " ".join(str(b.get("name") or "").split())[:24]
@@ -256,7 +268,7 @@ def make_handler(store, categories):
             return self._json(404, {"error": "not found"})
 
         def _page(self):
-            live = store.list()
+            live, _ = store.list()
             host_hdr = self.headers.get("Host") or ("%s:%d" % self.server.server_address[:2])
             rows = []
             for c in categories:
