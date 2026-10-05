@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """sgw -- the Serious Games Week matchmaker client the games call (stdlib only).
 
-The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.config/sgweek/url.
+The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.config/sgw/url.
   sgw url                                      print the configured matchmaker
-  sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgweek/url)
+  sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgw/url)
   sgw today                                    today's category where you are (and its games)
   sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
   sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V]
@@ -28,13 +28,18 @@ import urllib.request
 __version__ = "1.0.0"
 
 
+CONFIG = os.path.expanduser("~/.config/sgw/url")
+LEGACY_CONFIG = os.path.expanduser("~/.config/sgweek/url")   # read-only fallback for setups made before 2026-10-05
+
+
 def matchmaker_url():
     u = os.environ.get("SGW_URL")
     if not u:
-        p = os.path.expanduser("~/.config/sgweek/url")
-        if os.path.exists(p):
-            with open(p) as f:
-                u = f.readline().strip()
+        for p in (CONFIG, LEGACY_CONFIG):
+            if os.path.exists(p):
+                with open(p) as f:
+                    u = f.readline().strip()
+                break
     return u.rstrip("/") if u else None
 
 
@@ -97,7 +102,7 @@ def main(argv=None):
         if not args.set.startswith(("http://", "https://")):
             print("sgw: a matchmaker URL starts with http:// or https://", file=sys.stderr)
             return 2
-        p = os.path.expanduser("~/.config/sgweek/url")
+        p = CONFIG
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w") as f:
             f.write(args.set.rstrip("/") + "\n")
@@ -110,7 +115,7 @@ def main(argv=None):
         print(base or "")
         return 0 if base else 2
     if not base:
-        print("sgw: no matchmaker configured (set SGW_URL or write it to ~/.config/sgweek/url)", file=sys.stderr)
+        print("sgw: no matchmaker configured (set SGW_URL or write it to ~/.config/sgw/url)", file=sys.stderr)
         return 2
     try:
         if args.cmd == "today":

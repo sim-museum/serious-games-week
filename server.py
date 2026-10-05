@@ -3,8 +3,8 @@
 
 Set every game's strength so that you barely succeed: that edge is where you learn.
 
-Anyone can run one: `python3 server.py --port 8080 --db sgweek.db`. Games are told its URL by the player
-(SGW_URL, or ~/.config/sgweek/url), so several independent matchmakers can exist.
+Anyone can run one: `python3 server.py --port 8080 --db sgw.db`. Games are told its URL by the player
+(SGW_URL, or ~/.config/sgw/url), so several independent matchmakers can exist.
 
 THE WEEK. Each day of the week has one category of serious games (categories.json). A player may START a game
 only in the category of the current day *where the player is* -- the day is computed from the time zone the client
@@ -147,7 +147,7 @@ def make_handler(store, categories):
     said_lock = threading.Lock()
 
     class H(BaseHTTPRequestHandler):
-        server_version = "sgweek/1"
+        server_version = "sgw/1"
 
         def log_message(self, fmt, *a):
             if os.environ.get("SGW_LOG"):
@@ -394,7 +394,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--bind", default="0.0.0.0")
-    ap.add_argument("--db", default=os.path.join(HERE, "sgweek.db"))
+    ap.add_argument("--db", default=os.path.join(HERE, "sgw.db"))
     ap.add_argument("--categories", default=os.path.join(HERE, "categories.json"))
     a = ap.parse_args()
     srv = ThreadingHTTPServer((a.bind, a.port), make_handler(Store(a.db), load_categories(a.categories)))

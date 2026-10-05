@@ -36,12 +36,12 @@ repository:
 | Sunday | KaTrain (Go) | [katrain](https://github.com/sim-museum/katrain), a fork of sanderland/katrain with network play | yes |
 
 ## Run a matchmaker
-    python3 server.py --port 8080 --db sgweek.db      # Python 3.9+, no other dependencies
+    python3 server.py --port 8080 --db sgw.db      # Python 3.9+, no other dependencies
 Put it behind any HTTPS reverse proxy if it faces the internet. Players point their games at it.
 
 ## Host it on your LAN (systemd user service)
-    cp deploy/sgweek.service ~/.config/systemd/user/
-    systemctl --user daemon-reload && systemctl --user enable --now sgweek
+    cp deploy/sgw.service ~/.config/systemd/user/
+    systemctl --user daemon-reload && systemctl --user enable --now sgw
     loginctl enable-linger $USER        # optional: keep it up while nobody is logged in
 It listens on port 8090. The web page (`http://<this machine>:8090/`) is the live lobby: every day's category,
 today's highlighted with a countdown to its end in the viewer's own time zone, and every running session with game,
@@ -58,11 +58,11 @@ title, host player, address, players and age. It refreshes every 10 s.
 into their own environment and put `sgw` in `~/.local/bin`.)
 
 This puts `sgw` on your PATH, where every game looks for it. The flight-sim AppImages carry their own copy, and a
-clone of this repo at `~/serious-games-week` or `~/sgweek` also works. Only the client is installed; to run a matchmaker, use a
+clone of this repo at `~/serious-games-week` also works. Only the client is installed; to run a matchmaker, use a
 clone (below).
 
 ## Point the games at it
-    sgw url https://your-matchmaker.example      # writes ~/.config/sgweek/url; or export SGW_URL=...
+    sgw url https://your-matchmaker.example      # writes ~/.config/sgw/url; or export SGW_URL=...
 The games call `sgw` (`sgw announce` while hosting, `sgw list` to find games). Hosts must accept incoming
 connections on the game's port (port-forward it), exactly as with iGOR.
 
