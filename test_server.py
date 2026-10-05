@@ -129,7 +129,7 @@ class MatchmakerTest(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/") as r:
             page = r.read().decode()
         self.assertIn("sgw url " + self.base, page)
-        self.assertIn("pronounced &ldquo;squeak&rdquo;", page)
+        self.assertIn("so that you barely succeed", page)
 
     def test_chat_says_and_reads_since(self):
         time.sleep(1.05)   # the rate limit is per address, and every test client is 127.0.0.1

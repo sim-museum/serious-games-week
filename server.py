@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Serious Games Week matchmaker -- an iGOR-style lobby for a weekly collection of Linux-native serious games.
 
-"sgweek" is pronounced "squeak". The name is a reminder to set every game's strength so that you barely succeed, so
-that you only just squeak by.
+Set every game's strength so that you barely succeed: that edge is where you learn.
 
 Anyone can run one: `python3 server.py --port 8080 --db sgweek.db`. Games are told its URL by the player
 (SGW_URL, or ~/.config/sgweek/url), so several independent matchmakers can exist.
@@ -348,8 +347,7 @@ says why.</p></details>
 <form id=say autocomplete=off><input id=nm maxlength=24 placeholder="your name" required>
 <input id=tx maxlength=300 placeholder="say something to everyone here" required><button>Send</button></form>
 <p id=chaterr></p></div>
-<footer><b>sgweek</b> is pronounced &ldquo;squeak&rdquo;: set each game&rsquo;s strength so you barely succeed &mdash;
-so you only just <i>squeak by</i>. That edge is where you learn.</footer>
+<footer>Set each game&rsquo;s strength so that you barely succeed. That edge is where you learn.</footer>
 </main><script>
 const WD=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 const wd=(new Date().getDay()+6)%7;  // Monday = 0, in the viewer's own time zone

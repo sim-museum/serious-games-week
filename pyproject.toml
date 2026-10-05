@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "squeak-sgw"
+name = "serious-games-week"
 version = "1.0.0"
-description = "sgw: the client games use to list and find sessions on a squeak (Serious Games Week) matchmaker"
+description = "sgw: the client games use to list and find sessions on a Serious Games Week matchmaker"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
@@ -15,7 +15,7 @@ classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :
                "Topic :: Games/Entertainment", "Environment :: Console"]
 
 [project.urls]
-Homepage = "https://github.com/sim-museum/squeak"
+Homepage = "https://github.com/sim-museum/serious-games-week"
 
 [project.scripts]
 sgw = "sgw:cli"
