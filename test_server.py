@@ -150,6 +150,19 @@ class MatchmakerTest(unittest.TestCase):
         self.assertIn("sgw url " + self.base, page)
         self.assertIn("so that you barely succeed", page)
 
+    def test_note_is_one_line_listed_and_shown(self):
+        day, tz, _ = self.today_game_and_tz()
+        code, j = self.call("POST", "/api/games", {"game": day, "port": 47020, "title": "Evening", "tz": tz,
+                                                   "note": "  beginners\nwelcome, <b>1v1</b> " + "x" * 200})
+        self.assertEqual(code, 201)
+        g = [g for g in self.call("GET", "/api/games?game=" + day)[1]["games"] if g["id"] == j["id"]][0]
+        self.assertTrue(g["note"].startswith("beginners welcome, <b>1v1</b> x"))
+        self.assertEqual(len(g["note"]), 120)
+        with urllib.request.urlopen(self.base + "/") as r:
+            page = r.read().decode()
+        self.assertIn("beginners welcome, &lt;b&gt;1v1&lt;/b&gt;", page)
+        self.assertNotIn("<b>1v1</b>", page)
+
     def test_chat_says_and_reads_since(self):
         time.sleep(1.05)   # the rate limit is per address, and every test client is 127.0.0.1
         first = self.call("GET", "/api/chat")[1]["messages"]

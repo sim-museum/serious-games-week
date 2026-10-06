@@ -94,6 +94,11 @@ game's port on your router: UDP 47624 for MA and BoB (MA_DPLAY_PORT / BOB_DPLAY_
 Games without built-in support can be listed by hand while you host them:
 `sgw announce --game katrain --port 6000 --title "Teaching game"` (Ctrl-C withdraws it).
 
+## Session notes
+A host can add one line that players see under the session's title, for example
+`sgw announce --game katrain --port 6000 --title "Teaching game" --note "beginners welcome, reviews after"`.
+Notes are kept to 120 characters on one line, and appear in `sgw list --json` and on the page.
+
 ## Lobby chat
 Everyone on the page shares one chat, kept to the newest 1000 messages, one message a second per address. Your name
 is remembered by your browser. From a terminal: `sgw chat --follow` and `sgw say "anyone for a scramble?"`.

@@ -17,7 +17,7 @@ API (JSON over HTTP):
   GET    /api/today?tz=Area/City              the category a player in that zone may start games in now
   GET    /api/games[?game=ma]                 live game sessions (any category)
   POST   /api/games                           start: {game, title, port, tz, version?, players?, max_players?,
-                                              host?} -> {id, token, expires_in}; 403 if not today's category
+                                              host?, name?, build?, note?} -> {id, token, expires_in}; 403 if not today's category
   POST   /api/games/<id>/heartbeat            {token, players?} keeps it listed (sessions expire without one)
   DELETE /api/games/<id>                      {token} ends it
   GET    /api/chat[?since=<id>]               the lobby chat: messages newer than id (the newest 100 at most)
@@ -82,6 +82,8 @@ class Store:
                 self.db.execute("ALTER TABLE games ADD COLUMN name TEXT DEFAULT ''")
             if "build" not in cols:     # older databases: add the build (git commit) the host runs
                 self.db.execute("ALTER TABLE games ADD COLUMN build TEXT DEFAULT ''")
+            if "note" not in cols:      # older databases: add the host's one-line note ("beginners welcome")
+                self.db.execute("ALTER TABLE games ADD COLUMN note TEXT DEFAULT ''")
             self.db.commit()
 
     def purge(self):
@@ -92,8 +94,8 @@ class Store:
     def add(self, row):
         with self.lock:
             self.db.execute("INSERT INTO games (id,token,game,category,title,host,port,version,players,max_players,"
-                            "started,seen,name,build) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
-                            ":players,:max_players,:started,:seen,:name,:build)", row)
+                            "started,seen,name,build,note) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
+                            ":players,:max_players,:started,:seen,:name,:build,:note)", row)
             self.db.commit()
 
     def touch(self, gid, token, players=None):
@@ -130,7 +132,7 @@ class Store:
         A session that announced no build cannot be checked and counts as different. Without `build` (an older
         client) everything is listed, as before."""
         self.purge()
-        q = "SELECT id,game,category,title,host,port,version,players,max_players,started,name,build FROM games"
+        q = "SELECT id,game,category,title,host,port,version,players,max_players,started,name,build,note FROM games"
         args = ()
         if game:
             q += " WHERE game=?"
@@ -139,7 +141,7 @@ class Store:
         with self.lock:
             rows = self.db.execute(q, args).fetchall()
         keys = ["id", "game", "category", "title", "host", "port", "version", "players", "max_players", "started", "name",
-                "build"]
+                "build", "note"]
         out = [dict(zip(keys, r)) for r in rows]
         hidden = 0
         if build:
@@ -148,6 +150,7 @@ class Store:
         now = time.time()
         for g in out:
             g["name"] = g["name"] or ""
+            g["note"] = g["note"] or ""
             g["age_s"] = int(now - g["started"])
         return out, hidden
 
@@ -235,7 +238,8 @@ def make_handler(store, categories):
                            "title": str(b.get("title") or game)[:80], "host": str(b.get("host") or self.client_address[0])[:64],
                            "port": port, "version": str(b.get("version") or "")[:40], "players": int(b.get("players") or 1),
                            "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
-                           "name": str(b.get("name") or "")[:40], "build": str(b.get("build") or "")[:64]})
+                           "name": str(b.get("name") or "")[:40], "build": str(b.get("build") or "")[:64],
+                           "note": " ".join(str(b.get("note") or "").split())[:120]})
                 return self._json(201, {"id": gid, "token": token, "expires_in": EXPIRE_S})
             if u.path == "/api/chat":
                 name = " ".join(str(b.get("name") or "").split())[:24]
@@ -311,8 +315,9 @@ def row_html(g, categories):
     players = "%d" % g["players"] + ("/%d" % g["max_players"] if g["max_players"] else "")
     who = (" &middot; " + html.escape(g["name"])) if g["name"] else ""
     ver = (" <span class=ver>v" + html.escape(g["version"]) + "</span>") if g["version"] else ""
-    return ("<tr><td class=g>%s%s</td><td>%s%s</td><td class=addr>%s:%d</td><td>%s</td><td class=age>%s</td></tr>"
-            % (html.escape(game_name(g["game"], categories)), ver, html.escape(g["title"]), who,
+    note = ("<div class=note>" + html.escape(g["note"]) + "</div>") if g.get("note") else ""
+    return ("<tr><td class=g>%s%s</td><td>%s%s%s</td><td class=addr>%s:%d</td><td>%s</td><td class=age>%s</td></tr>"
+            % (html.escape(game_name(g["game"], categories)), ver, html.escape(g["title"]), who, note,
                html.escape(g["host"]), g["port"], players, fmt_age(g["age_s"])))
 
 
@@ -329,7 +334,7 @@ section{border-top:1px solid var(--line);padding:12px 8px}section.today{backgrou
 h2{font-size:1.1rem;margin:.2em 0}.games{color:var(--muted);margin:.2em 0 .4em}
 table{width:100%;border-collapse:collapse;font-size:.95rem}td{padding:3px 6px;vertical-align:top}
 td.g{font-weight:600;white-space:nowrap}td.addr{font-family:ui-monospace,monospace;white-space:nowrap}
-td.age{color:var(--muted);white-space:nowrap;text-align:right}.ver{color:var(--muted);font-weight:400;font-size:.85em}
+td.age{color:var(--muted);white-space:nowrap;text-align:right}.ver{color:var(--muted);font-weight:400;font-size:.85em}.note{color:var(--muted);font-size:.9em;margin-top:2px}
 tr.none td{color:var(--muted)}
 details{margin:16px 0;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
 code{font-family:ui-monospace,monospace;background:rgba(127,127,127,.12);padding:1px 4px;border-radius:4px;overflow-wrap:anywhere}
@@ -374,7 +379,7 @@ function tick(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0);const s=Ma
   if(((n.getDay()+6)%7)!==wd)location.reload();}
 function row(g){const p=g.players+(g.max_players?'/'+g.max_players:'');
   return '<tr><td class=g>'+esc(gname(g.game))+(g.version?' <span class=ver>v'+esc(g.version)+'</span>':'')+'</td><td>'+esc(g.title)+
-  (g.name?' · '+esc(g.name):'')+'</td><td class=addr>'+esc(g.host)+':'+g.port+'</td><td>'+p+'</td><td class=age>'+age(g.age_s)+'</td></tr>';}
+  (g.name?' · '+esc(g.name):'')+(g.note?'<div class=note>'+esc(g.note)+'</div>':'')+'</td><td class=addr>'+esc(g.host)+':'+g.port+'</td><td>'+p+'</td><td class=age>'+age(g.age_s)+'</td></tr>';}
 async function refresh(){try{
   if(!cats.length)cats=(await (await fetch('/api/categories')).json()).categories;
   const games=(await (await fetch('/api/games')).json()).games;
