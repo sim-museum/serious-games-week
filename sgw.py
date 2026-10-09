@@ -9,8 +9,8 @@ The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.c
   sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V --build B --note T]
                                                list this host's game and keep it listed (heartbeat) until
                                                killed (SIGTERM/SIGINT) or stdin closes -- the game spawns it when
-                                               it starts hosting and kills it when the session ends. Exit 3 and
-                                               a message on stderr if today's category does not allow the game.
+                                               it starts hosting and kills it when the session ends. Any game,
+                                               any day (today's category is a suggestion).
   sgw chat [--follow]                          the lobby chat (--follow keeps printing new messages)
   sgw say "text" [--name N]                    say something in the lobby chat
 Exit codes: 0 ok, 2 no matchmaker configured, 3 refused by the matchmaker, 4 network error.

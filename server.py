@@ -6,10 +6,10 @@ Set every game's strength so that you barely succeed: that edge is where you lea
 Anyone can run one: `python3 server.py --port 8080 --db sgw.db`. Games are told its URL by the player
 (SGW_URL, or ~/.config/sgw/url), so several independent matchmakers can exist.
 
-THE WEEK. Each day of the week has one category of serious games (categories.json). A player may START a game
-only in the category of the current day *where the player is* -- the day is computed from the time zone the client
-reports -- so everyone rotates through all seven categories during the week. JOINING is open: a game someone
-started on their own day stays joinable until it ends. The site lists every category and every game the same
+THE WEEK. Each day of the week has one category of serious games (categories.json): a SUGGESTION, so that players
+who want company know which games others are likely to be playing that day *where they are* (the day is computed
+from the time zone the client reports). Any game may be started on any day; the response says whether it is the
+day's category. JOINING is open: a game stays joinable until it ends. The site lists every category and every game the same
 way; nothing is promoted.
 
 API (JSON over HTTP):
@@ -17,7 +17,7 @@ API (JSON over HTTP):
   GET    /api/today?tz=Area/City              the category a player in that zone may start games in now
   GET    /api/games[?game=ma]                 live game sessions (any category)
   POST   /api/games                           start: {game, title, port, tz, version?, players?, max_players?,
-                                              host?, name?, build?, note?} -> {id, token, expires_in}; 403 if not today's category
+                                              host?, name?, build?, note?} -> {id, token, expires_in, on_day, today}
   POST   /api/games/<id>/heartbeat            {token, players?} keeps it listed (sessions expire without one)
   DELETE /api/games/<id>                      {token} ends it
   GET    /api/chat[?since=<id>]               the lobby chat: messages newer than id (the newest 100 at most)
@@ -223,11 +223,7 @@ def make_handler(store, categories):
                     return self._json(400, {"error": str(e)})
                 today = categories[wd]
                 cat = games_to_cat[game]
-                if cat["id"] != today["id"]:
-                    return self._json(403, {"error": "today (%s where you are) is %s day: you can start %s games, "
-                                            "and join any game already running" %
-                                            (WEEKDAYS[wd], today["name"], today["name"]),
-                                            "today": today["id"]})
+                on_day = cat["id"] == today["id"]   # the day's category is a suggestion, not a rule (PO, 2026-10-08)
                 try:
                     port = int(b.get("port"))
                     assert 0 < port < 65536
@@ -240,7 +236,8 @@ def make_handler(store, categories):
                            "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
                            "name": str(b.get("name") or "")[:40], "build": str(b.get("build") or "")[:64],
                            "note": " ".join(str(b.get("note") or "").split())[:120]})
-                return self._json(201, {"id": gid, "token": token, "expires_in": EXPIRE_S})
+                return self._json(201, {"id": gid, "token": token, "expires_in": EXPIRE_S,
+                                         "on_day": on_day, "today": today["id"]})
             if u.path == "/api/chat":
                 name = " ".join(str(b.get("name") or "").split())[:24]
                 text = " ".join(str(b.get("text") or "").split())[:300]
@@ -347,15 +344,15 @@ border:1px solid var(--accent);background:var(--accent);color:var(--bg);cursor:p
 footer{margin-top:24px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
 </style></head><body><main>
 <h1>Serious Games Week</h1>
-<p class=lead>One kind of serious game for each day of the week, Linux-native games only. You can start a game in
-<b>today's</b> category where you are; you can join any game that is running. Every day gets its turn.</p>
+<p class=lead>One kind of serious game for each day of the week, Linux-native games only. Each day's category is a
+suggestion, so you know what others are likely to be playing today where you are. You can start any game on any
+day, and join any game that is running.</p>
 <div class=bar><span id=today></span><span id=countdown></span><span id=stamp></span></div>
 <details><summary>Point your games at this matchmaker</summary>
 <p>On each machine, once: <code>sgw url {{URL}}</code> (or <code>export SGW_URL={{URL}}</code>).</p>
 <p>MiG Alley and Battle of Britain list a session when you host one and show listed sessions in Join.
 FreeFalcon lists you when you go online in Comms without a remote address, and adds listed hosts to the phonebook.
-Hosts must accept connections on the game's port. A game outside today's category is not listed, and the game
-says why.</p></details>
+Hosts must accept connections on the game's port.</p></details>
 <div id=sections>
 {{SECTIONS}}
 </div>

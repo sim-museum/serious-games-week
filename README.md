@@ -5,8 +5,9 @@ succeed**. A win that costs nothing teaches nothing, and a loss you could never 
 there.
 
 An iGOR-style lobby for a weekly collection of **Linux-native serious games**: one category for each day of the
-week. You can **start** a game only in **today's** category *where you are* (your own time zone); you can **join**
-any game that is running. Everyone rotates through all seven categories, and the site promotes no game over another.
+week. Each day's category is a **suggestion**, so players who want company know what others are likely to be playing
+that day *where they are* (your own time zone). You can **start** any game on any day, and **join** any game that is
+running. The site promotes no game over another.
 
 | Day | Category | Games |
 |---|---|---|
@@ -71,10 +72,8 @@ How each game uses it:
   Join's session list also shows the sessions the matchmaker lists.
 * **FreeFalcon:** going online in the Comms window *without* a remote address lists you. The hosts the matchmaker
   lists appear in the Comms phonebook; pick one and Connect.
-* If today's category where you are does not include the game, the matchmaker refuses the listing. The game still
-  hosts on your LAN, and its log says why.
-* **Day check:** the day is taken from the time zone the player's machine reports. Like iGOR's rules, it is a
-  convention among players, not a lock.
+* Any game can be listed on any day. **Today's category** (taken from the time zone the player's machine reports)
+  is only a suggestion of what others are likely to be playing.
 
 ## How to host a game
 You host **in the game**, not on the website. The matchmaker lists your game for you.
@@ -87,8 +86,7 @@ You host **in the game**, not on the website. The matchmaker lists your game for
    30 s) and disappears when you close the session or quit.
 4. Players join from the game's own Join screen (MA/BoB) or Comms phonebook (FF), where listed hosts appear.
 
-If today's category does not include your game, the matchmaker refuses the listing and the game's log says why. You
-can still host for players who know your address. On a LAN nothing more is needed. Over the internet, forward the
+You can also host without the matchmaker, for players who know your address. On a LAN nothing more is needed. Over the internet, forward the
 game's port on your router: UDP 47624 for MA and BoB (MA_DPLAY_PORT / BOB_DPLAY_PORT change it), 2934 for FF.
 
 Games without built-in support can be listed by hand while you host them:

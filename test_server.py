@@ -58,23 +58,28 @@ class MatchmakerTest(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual([c["weekday"] for c in j["categories"]], list(range(7)))
 
-    def test_start_allowed_only_in_todays_category(self):
+    def test_any_game_any_day(self):
+        """The day's category is a suggestion (PO, 2026-10-08): another day's game is accepted, and flagged."""
         game, tz, wd = self.today_game_and_tz()
         code, j = self.call("POST", "/api/games", {"game": game, "title": "t", "port": 47000, "tz": tz})
         self.assertEqual(code, 201, j)
+        self.assertTrue(j["on_day"])
         other = self.cats[(wd + 1) % 7]["games"][0]["id"]
         code, j = self.call("POST", "/api/games", {"game": other, "title": "t", "port": 47001, "tz": tz})
-        self.assertEqual(code, 403, j)
+        self.assertEqual(code, 201, j)
+        self.assertFalse(j["on_day"])
         self.assertEqual(j["today"], self.cats[wd]["id"])
+        listed = [g["game"] for g in self.call("GET", "/api/games")[1]["games"]]
+        self.assertIn(other, listed)
 
     def test_day_is_the_players_own(self):
-        """The same game can be startable for a player in one zone and not for one in another."""
+        """The same game can be on the day's category for a player in one zone and not for one in another."""
         for wd in range(7):
             tz_here, tz_there = zone_where_it_is(wd), zone_where_it_is((wd + 1) % 7)
             if tz_here and tz_there:
                 game = self.cats[wd]["games"][0]["id"]
-                self.assertEqual(self.call("POST", "/api/games", {"game": game, "port": 47002, "tz": tz_here})[0], 201)
-                self.assertEqual(self.call("POST", "/api/games", {"game": game, "port": 47003, "tz": tz_there})[0], 403)
+                self.assertTrue(self.call("POST", "/api/games", {"game": game, "port": 47002, "tz": tz_here})[1]["on_day"])
+                self.assertFalse(self.call("POST", "/api/games", {"game": game, "port": 47003, "tz": tz_there})[1]["on_day"])
                 return
         self.skipTest("no two zones on adjacent weekdays right now")
 
