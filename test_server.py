@@ -168,37 +168,122 @@ class MatchmakerTest(unittest.TestCase):
         self.assertIn("beginners welcome, &lt;b&gt;1v1&lt;/b&gt;", page)
         self.assertNotIn("<b>1v1</b>", page)
 
-    def test_chat_says_and_reads_since(self):
-        time.sleep(1.05)   # the rate limit is per address, and every test client is 127.0.0.1
-        first = self.call("GET", "/api/chat")[1]["messages"]
-        since = first[-1]["id"] if first else 0
-        code, j = self.call("POST", "/api/chat", {"name": "  Ace  ", "text": "anyone for a\nscramble?"})
-        self.assertEqual(code, 201, j)
-        new = self.call("GET", "/api/chat?since=%d" % since)[1]["messages"]
-        self.assertEqual([(m["name"], m["text"]) for m in new], [("Ace", "anyone for a scramble?")])
-        self.assertEqual(self.call("GET", "/api/chat?since=%d" % new[-1]["id"])[1]["messages"], [])
+    def start(self, **kw):
+        body = dict({"game": "ma", "title": "Chat test", "port": 4243, "tz": "UTC", "name": "Host"}, **kw)
+        code, j = self.call("POST", "/api/games", body)
+        self.assertEqual(code, 201)
+        return j
+
+    def test_there_is_no_lobby_chat(self):
+        self.assertEqual(self.call("GET", "/api/chat")[0], 410)
+        self.assertEqual(self.call("POST", "/api/chat", {"name": "A", "text": "hi"})[0], 410)
+
+    def test_chat_is_inside_a_game_for_its_members(self):
+        g = self.start()
+        path = "/api/games/%s/chat" % g["id"]
+        self.assertEqual(self.call("GET", path)[0], 403)                       # not joined: nothing to read
+        self.assertEqual(self.call("POST", path, {"token": "x", "text": "hi"})[0], 403)
+        code, j = self.call("POST", "/api/games/%s/join" % g["id"], {"name": "  Ace  "})
+        self.assertEqual(code, 200)
+        self.assertEqual(j["port"], 4243)
+        code, _ = self.call("POST", path, {"token": j["member"], "text": "anyone for a\nscramble?"})
+        self.assertEqual(code, 201)
+        time.sleep(1.05)
+        self.assertEqual(self.call("POST", path, {"token": g["token"], "text": "yes"})[0], 201)   # the host chats too
+        ms = self.call("GET", path + "?token=" + j["member"])[1]["messages"]
+        self.assertEqual([(m["name"], m["text"]) for m in ms], [("Ace", "anyone for a scramble?"), ("Host", "yes")])
+        self.assertEqual(self.call("GET", path + "?token=%s&since=%d" % (j["member"], ms[-1]["id"]))[1]["messages"], [])
+        other = self.start(title="Other")                                      # another game sees none of it
+        code, k = self.call("POST", "/api/games/%s/join" % other["id"], {"name": "B"})
+        self.assertEqual(self.call("GET", "/api/games/%s/chat?token=%s" % (other["id"], k["member"]))[1]["messages"], [])
+        self.assertEqual(self.call("GET", path + "?token=" + k["member"])[0], 403)   # a member of one game only
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
+        self.assertEqual(self.call("GET", path + "?token=" + j["member"])[0], 403)   # the chat ends with the game
+        self.call("DELETE", "/api/games/" + other["id"], {"token": other["token"]})
 
     def test_chat_rate_limit_and_validation(self):
+        g = self.start()
+        _, j = self.call("POST", "/api/games/%s/join" % g["id"], {"name": "B"})
+        path = "/api/games/%s/chat" % g["id"]
         time.sleep(1.05)
-        self.assertEqual(self.call("POST", "/api/chat", {"name": "B", "text": "one"})[0], 201)
-        self.assertEqual(self.call("POST", "/api/chat", {"name": "B", "text": "two"})[0], 429)
+        self.assertEqual(self.call("POST", path, {"token": j["member"], "text": "one"})[0], 201)
+        self.assertEqual(self.call("POST", path, {"token": j["member"], "text": "two"})[0], 429)
         time.sleep(1.05)
-        self.assertEqual(self.call("POST", "/api/chat", {"name": "", "text": "x"})[0], 400)
-        code, _ = self.call("POST", "/api/chat", {"name": "C" * 99, "text": "y" * 999})
-        self.assertEqual(code, 201)
-        m = self.call("GET", "/api/chat")[1]["messages"][-1]
-        self.assertEqual((len(m["name"]), len(m["text"])), (24, 300))
+        self.assertEqual(self.call("POST", path, {"token": j["member"], "text": "  "})[0], 400)
+        self.assertEqual(self.call("POST", "/api/games/%s/join" % g["id"], {"name": ""})[0], 400)
+        self.assertEqual(self.call("POST", "/api/games/nosuch/join", {"name": "C"})[0], 404)
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
 
-    def test_chat_keeps_only_the_newest(self):
+    def test_chat_keeps_only_the_newest_per_game(self):
         st = server.Store(os.path.join(self.tmp, "chat.db"))
         st.CHAT_KEEP = 5
         for i in range(12):
-            st.say("n", "m%d" % i, "a")
-        self.assertEqual([m["text"] for m in st.chat()], ["m%d" % i for i in range(7, 12)])
+            st.say("g1", "n", "m%d" % i, "1.2.3.4")
+        st.say("g2", "n", "other", "1.2.3.4")
+        self.assertEqual([m["text"] for m in st.chat("g1")], ["m%d" % i for i in range(7, 12)])
+        self.assertEqual([m["text"] for m in st.chat("g2")], ["other"])
 
-    def test_page_has_the_chat_panel(self):
+    def test_password_hides_the_address_until_joined(self):
+        g = self.start(title="Locked", password="s3cret", port=4999)
+        row = [x for x in self.call("GET", "/api/games?game=ma")[1]["games"] if x["id"] == g["id"]][0]
+        self.assertTrue(row["locked"])
+        self.assertEqual((row["host"], row["port"]), ("", 0))
+        self.assertEqual(self.call("POST", "/api/games/%s/join" % g["id"], {"name": "A"})[0], 403)
+        self.assertEqual(self.call("POST", "/api/games/%s/join" % g["id"], {"name": "A", "password": "wrong"})[0], 403)
+        code, j = self.call("POST", "/api/games/%s/join" % g["id"], {"name": "A", "password": "s3cret"})
+        self.assertEqual((code, j["host"], j["port"]), (200, "127.0.0.1", 4999))
+        self.assertNotIn("s3cret", open(os.path.join(self.tmp, "t.db"), "rb").read().decode("latin-1"))
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
+
+    def test_open_game_is_listed_with_its_address(self):
+        g = self.start(title="Open", port=4998)
+        row = [x for x in self.call("GET", "/api/games?game=ma")[1]["games"] if x["id"] == g["id"]][0]
+        self.assertFalse(row["locked"])
+        self.assertEqual(row["port"], 4998)
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
+
+    def test_any_number_of_games_at_once(self):
+        gs = [self.start(title="Many %d" % i, port=5000 + i) for i in range(30)]
+        listed = {x["id"] for x in self.call("GET", "/api/games?game=ma")[1]["games"]}
+        self.assertTrue({g["id"] for g in gs} <= listed)
+        for g in gs:
+            self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
+
+    def test_old_lobby_chat_database_is_upgraded(self):
+        import sqlite3
+        p = os.path.join(self.tmp, "lobby.db")
+        db = sqlite3.connect(p)
+        db.execute("CREATE TABLE chat (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, name TEXT, text TEXT, addr TEXT)")
+        db.execute("INSERT INTO chat (ts,name,text,addr) VALUES (1,'a','old lobby line','x')")
+        db.commit(); db.close()
+        st = server.Store(p)
+        self.assertEqual(st.chat(""), [])            # the lobby's lines are not carried into any game
+
+    def test_page_has_join_and_no_lobby_chat(self):
+        g = self.start(title="Page row", password="pw")
         with urllib.request.urlopen(self.base + "/") as r:
-            self.assertIn('id=chat', r.read().decode())
+            page = r.read().decode()
+        self.assertNotIn("Lobby chat", page)
+        self.assertIn('class=join data-id=%s data-locked=1' % g["id"], page)
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
+
+    def test_sgw_client_join_chat_and_locked_list(self):
+        import subprocess, sys
+        g = self.start(title="CLI", password="pw", port=4777)
+        env = dict(os.environ, SGW_URL=self.base)
+        run = lambda *a: subprocess.run([sys.executable, os.path.join(HERE, "sgw.py")] + list(a), env=env,
+                                        capture_output=True, text=True, timeout=20)
+        r = run("list", "--game", "ma")
+        self.assertNotIn("4777", r.stdout)
+        self.assertIn(g["id"], r.stderr)
+        self.assertEqual(run("join", "--id", g["id"], "--name", "Cli").returncode, 3)
+        r = run("join", "--id", g["id"], "--name", "Cli", "--password", "pw")
+        host, port, tok = r.stdout.split()
+        self.assertEqual((host, port), ("127.0.0.1", "4777"))
+        time.sleep(1.05)
+        self.assertEqual(run("say", "--id", g["id"], "--token", tok, "hello").returncode, 0)
+        self.assertIn("Cli: hello", run("chat", "--id", g["id"], "--token", tok).stdout)
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
 
     def test_page_lists_every_category_equally(self):
         with urllib.request.urlopen(self.base + "/") as r:

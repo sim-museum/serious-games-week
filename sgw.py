@@ -6,13 +6,17 @@ The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.c
   sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgw/url)
   sgw today                                    today's category where you are (and its games)
   sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
+                                               (passworded games: --json only, or named on stderr)
   sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V --build B --note T]
                                                list this host's game and keep it listed (heartbeat) until
                                                killed (SIGTERM/SIGINT) or stdin closes -- the game spawns it when
                                                it starts hosting and kills it when the session ends. Any game,
                                                any day (today's category is a suggestion).
-  sgw chat [--follow]                          the lobby chat (--follow keeps printing new messages)
-  sgw say "text" [--name N]                    say something in the lobby chat
+                                               --password P (or $SGW_PASSWORD): listed with a lock and no address;
+                                               players join with the password.
+  sgw join --id ID [--password P --name N]     join a listed game: prints "host port member-token"
+  sgw chat --id ID --token T [--follow]        that game's chat (there is no lobby chat; T from join)
+  sgw say --id ID --token T "text"             say something to that game's players
 Exit codes: 0 ok, 2 no matchmaker configured, 3 refused by the matchmaker, 4 network error.
 """
 import argparse
@@ -88,9 +92,15 @@ def main(argv=None):
     # --build: the git commit this game was built from ($SGW_BUILD). Only sessions built from the same commit are
     # listed, so two different builds never meet (version skew); the matchmaker reports how many it left out.
     l.add_argument("--build", default=os.environ.get("SGW_BUILD", ""))
-    c = sub.add_parser("chat"); c.add_argument("--follow", action="store_true")
-    y = sub.add_parser("say"); y.add_argument("text")
-    y.add_argument("--name", default=os.environ.get("SGW_NAME") or os.environ.get("USER", ""))
+    # There is no lobby chat: `join` a game (its password if it has one) for its address and a member token, then
+    # `chat`/`say` inside that game with the token.
+    me = os.environ.get("SGW_NAME") or os.environ.get("USER", "")
+    jn = sub.add_parser("join"); jn.add_argument("--id", required=True); jn.add_argument("--name", default=me)
+    jn.add_argument("--password", default=os.environ.get("SGW_PASSWORD", ""))
+    c = sub.add_parser("chat"); c.add_argument("--id", required=True); c.add_argument("--token", required=True)
+    c.add_argument("--follow", action="store_true")
+    y = sub.add_parser("say"); y.add_argument("--id", required=True); y.add_argument("--token", required=True)
+    y.add_argument("text")
     a = sub.add_parser("announce")
     a.add_argument("--game", required=True); a.add_argument("--port", type=int, required=True)
     a.add_argument("--title", default=""); a.add_argument("--players", type=int, default=1)
@@ -100,6 +110,8 @@ def main(argv=None):
     a.add_argument("--name", default=os.environ.get("SGW_NAME") or os.environ.get("USER", ""),
                    help="your name as other players see it (default: $SGW_NAME, else your login)")
     a.add_argument("--note", default="", help="one line other players see, e.g. \"beginners welcome\"")
+    a.add_argument("--password", default=os.environ.get("SGW_PASSWORD", ""),
+                   help="players must give it to see the address and chat ($SGW_PASSWORD); empty = open game")
     a.add_argument("--every", type=float, default=30.0)
     args = ap.parse_args(argv)
 
@@ -140,18 +152,33 @@ def main(argv=None):
             if args.json:
                 print(json.dumps(j["games"]))
             else:
+                # the "host port players title" lines the games parse: a passworded game has no address to print
+                locked = [g for g in j["games"] if g.get("locked")]
+                if locked:
+                    print("sgw: %d %s game(s) need a password: sgw join --id <id> --password <pw> (%s)"
+                          % (len(locked), args.game, ", ".join(g["id"] for g in locked)), file=sys.stderr)
                 for g in j["games"]:
-                    print("%s %d %d %s" % (g["host"], g["port"], g["players"], g["title"].replace("\n", " ")))
+                    if not g.get("locked"):
+                        print("%s %d %d %s" % (g["host"], g["port"], g["players"], g["title"].replace("\n", " ")))
+            return 0
+        if args.cmd == "join":
+            code, j = call(base, "POST", "/api/games/%s/join" % args.id, {"name": args.name, "password": args.password})
+            if code != 200:
+                print("sgw: %s" % j.get("error"), file=sys.stderr); return 3
+            print("%s %d %s" % (j["host"], j["port"], j["member"]))      # host port member-token
             return 0
         if args.cmd in ("chat", "say"):
+            path = "/api/games/%s/chat" % args.id
             if args.cmd == "say":
-                code, j = call(base, "POST", "/api/chat", {"name": args.name, "text": args.text})
+                code, j = call(base, "POST", path, {"token": args.token, "text": args.text})
                 if code != 201:
                     print("sgw: %s" % j.get("error"), file=sys.stderr); return 3
                 return 0
             last = 0
             while True:
-                code, j = call(base, "GET", "/api/chat?since=%d" % last)
+                code, j = call(base, "GET", "%s?token=%s&since=%d" % (path, args.token, last))
+                if code != 200:
+                    print("sgw: %s" % j.get("error"), file=sys.stderr); return 3
                 for m in j.get("messages", []):
                     last = m["id"]
                     print("%s  %s: %s" % (time.strftime("%H:%M", time.localtime(m["ts"])), m["name"], m["text"]), flush=True)
@@ -161,7 +188,7 @@ def main(argv=None):
         # announce
         body = dict(where(), game=args.game, port=args.port, title=args.title, players=args.players,
                     max_players=args.max, version=args.version, name=args.name, build=args.build,
-                    note=args.note)
+                    note=args.note, password=args.password)
         if args.host:
             body["host"] = args.host
         code, j = call(base, "POST", "/api/games", body)

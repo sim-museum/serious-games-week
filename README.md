@@ -97,9 +97,18 @@ A host can add one line that players see under the session's title, for example
 `sgw announce --game katrain --port 6000 --title "Teaching game" --note "beginners welcome, reviews after"`.
 Notes are kept to 120 characters on one line, and appear in `sgw list --json` and on the page.
 
-## Lobby chat
-Everyone on the page shares one chat, kept to the newest 1000 messages, one message a second per address. Your name
-is remembered by your browser. From a terminal: `sgw chat --follow` and `sgw say "anyone for a scramble?"`.
+## Passwords and chat (as on iGOR)
+Any number of games can run at once, on any day. There is **no lobby chat**: bad actors who are not in a game have
+nothing to read or write. Press **Join** on a game (on the page, or `sgw join --id <id>`) to see its address and its
+chat, which only that game's players share (the newest 200 lines, one message a second per address). The chat ends
+when the game does.
+
+A host can set a password: `sgw announce ... --password <pw>` (or `SGW_PASSWORD`). The game is listed with a lock
+and no address; only a player who joins with the password gets the address and the chat. The matchmaker keeps a
+salted hash, never the password. It hides the address, so a stranger on the list cannot find the game; it does not
+stop someone who already knows the address (the game's own join decides that). From a terminal:
+`sgw join --id <id> --password <pw>` prints `host port token`, then `sgw chat --id <id> --token <token> --follow`
+and `sgw say --id <id> --token <token> "ready?"`.
 
 ## API
 See the docstring at the top of `server.py`. Tests: `python3 -m unittest -v test_server`.
