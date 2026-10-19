@@ -17,7 +17,9 @@ API (JSON over HTTP):
   GET    /api/today?tz=Area/City              the category a player in that zone may start games in now
   GET    /api/games[?game=ma]                 live game sessions (any category)
   POST   /api/games                           start: {game, title, port, tz, version?, players?, max_players?,
-                                              host?, name?, build?, note?, password?} -> {id, token, expires_in, on_day, today}
+                                              host?, name?, build?, note?, password?, ping_port?}
+                                              -> {id, token, expires_in, on_day, today}; ping_port: the TCP port
+                                              where the host answers GET /ping (players time it: the ping column)
   POST   /api/games/<id>/heartbeat            {token, players?} keeps it listed (sessions expire without one)
   DELETE /api/games/<id>                      {token} ends it
   POST   /api/games/<id>/join                 {name, password?} -> {host, port, member}; a game started with a
@@ -96,6 +98,8 @@ class Store:
                 self.db.execute("ALTER TABLE games ADD COLUMN build TEXT DEFAULT ''")
             if "note" not in cols:      # older databases: add the host's one-line note ("beginners welcome")
                 self.db.execute("ALTER TABLE games ADD COLUMN note TEXT DEFAULT ''")
+            if "ping_port" not in cols:  # older databases: add the host's ping responder port (sgw announce)
+                self.db.execute("ALTER TABLE games ADD COLUMN ping_port INTEGER DEFAULT 0")
             if "pwhash" not in cols:    # older databases: add the optional password (salted hash, never the text)
                 self.db.execute("ALTER TABLE games ADD COLUMN pwhash TEXT DEFAULT ''")
             self.db.commit()
@@ -114,8 +118,9 @@ class Store:
     def add(self, row):
         with self.lock:
             self.db.execute("INSERT INTO games (id,token,game,category,title,host,port,version,players,max_players,"
-                            "started,seen,name,build,note,pwhash) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
-                            ":players,:max_players,:started,:seen,:name,:build,:note,:pwhash)", dict({"pwhash": ""}, **row))
+                            "started,seen,name,build,note,pwhash,ping_port) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
+                            ":players,:max_players,:started,:seen,:name,:build,:note,:pwhash,:ping_port)",
+                            dict({"pwhash": "", "ping_port": 0}, **row))
             self.db.commit()
 
     def touch(self, gid, token, players=None):
@@ -137,7 +142,7 @@ class Store:
         The member token is the key to the game's chat; a locked game's address is only given here."""
         self.purge()
         with self.lock:
-            r = self.db.execute("SELECT host,port,pwhash FROM games WHERE id=?", (gid,)).fetchone()
+            r = self.db.execute("SELECT host,port,pwhash,ping_port FROM games WHERE id=?", (gid,)).fetchone()
             if not r:
                 return None, "no such game"
             if r[2] and not pw_ok(password or "", r[2]):
@@ -145,7 +150,7 @@ class Store:
             member = secrets.token_hex(16)
             self.db.execute("INSERT INTO members (gid,token,name,joined) VALUES (?,?,?,?)", (gid, member, name, time.time()))
             self.db.commit()
-        return {"host": r[0], "port": r[1], "member": member}, None
+        return {"host": r[0], "port": r[1], "member": member, "ping_port": r[3] or 0}, None
 
     def speaker(self, gid, token):
         """The name a token chats under in game gid: a member's, or the host's (its session token); None if neither."""
@@ -182,7 +187,7 @@ class Store:
         client) everything is listed, as before."""
         self.purge()
         q = ("SELECT id,game,category,title,host,port,version,players,max_players,started,name,build,note,"
-             "pwhash != '' FROM games")
+             "pwhash != '',ping_port FROM games")
         args = ()
         if game:
             q += " WHERE game=?"
@@ -191,7 +196,7 @@ class Store:
         with self.lock:
             rows = self.db.execute(q, args).fetchall()
         keys = ["id", "game", "category", "title", "host", "port", "version", "players", "max_players", "started", "name",
-                "build", "note", "locked"]
+                "build", "note", "locked", "ping_port"]
         out = [dict(zip(keys, r)) for r in rows]
         hidden = 0
         if build:
@@ -203,8 +208,9 @@ class Store:
             g["note"] = g["note"] or ""
             g["age_s"] = int(now - g["started"])
             g["locked"] = bool(g["locked"])
+            g["ping_port"] = g["ping_port"] or 0
             if g["locked"]:              # a passworded game's address is given only to a player who joins (POST .../join)
-                g["host"], g["port"] = "", 0
+                g["host"], g["port"], g["ping_port"] = "", 0, 0
         return out, hidden
 
 
@@ -297,6 +303,11 @@ def make_handler(store, categories):
                     assert 0 < port < 65536
                 except Exception:
                     return self._json(400, {"error": "port required"})
+                try:
+                    ping_port = int(b.get("ping_port") or 0)
+                    assert 0 <= ping_port < 65536
+                except Exception:
+                    return self._json(400, {"error": "bad ping_port"})
                 gid, token, now = secrets.token_hex(6), secrets.token_hex(16), time.time()
                 store.add({"id": gid, "token": token, "game": game, "category": cat["id"],
                            "title": str(b.get("title") or game)[:80], "host": str(b.get("host") or self.client_address[0])[:64],
@@ -304,7 +315,8 @@ def make_handler(store, categories):
                            "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
                            "name": str(b.get("name") or "")[:40], "build": str(b.get("build") or "")[:64],
                            "note": " ".join(str(b.get("note") or "").split())[:120],
-                           "pwhash": pw_hash(str(b["password"])[:64]) if b.get("password") else ""})
+                           "pwhash": pw_hash(str(b["password"])[:64]) if b.get("password") else "",
+                           "ping_port": ping_port})
                 return self._json(201, {"id": gid, "token": token, "expires_in": EXPIRE_S,
                                          "on_day": on_day, "today": today["id"]})
             if u.path == "/api/chat":
@@ -375,7 +387,7 @@ def make_handler(store, categories):
 
 
 NO_LOBBY = "there is no lobby chat: join a game, then chat inside it (POST /api/games/<id>/join)"
-NONE_ROW = "<tr class=none><td colspan=6>no games running</td></tr>"
+NONE_ROW = "<tr class=none><td colspan=7>no games running</td></tr>"
 
 
 def game_name(gid, categories):
@@ -397,10 +409,10 @@ def row_html(g, categories):
     ver = (" <span class=ver>v" + html.escape(g["version"]) + "</span>") if g["version"] else ""
     note = ("<div class=note>" + html.escape(g["note"]) + "</div>") if g.get("note") else ""
     addr = "&#128274; password" if g.get("locked") else "%s:%d" % (html.escape(g["host"]), g["port"])
-    return ("<tr><td class=g>%s%s</td><td>%s%s%s</td><td class=addr>%s</td><td>%s</td><td class=age>%s</td>"
+    return ("<tr><td class=g>%s%s</td><td>%s%s%s</td><td class=addr>%s</td><td class=ping data-id=%s></td><td>%s</td><td class=age>%s</td>"
             "<td><button class=join data-id=%s data-locked=%d data-title=\"%s\">Join</button></td></tr>"
             % (html.escape(game_name(g["game"], categories)), ver, html.escape(g["title"]), who, note,
-               addr, players, fmt_age(g["age_s"]), html.escape(g["id"]), int(bool(g.get("locked"))),
+               addr, html.escape(g["id"]), players, fmt_age(g["age_s"]), html.escape(g["id"]), int(bool(g.get("locked"))),
                html.escape(g["title"])))
 
 
@@ -424,7 +436,7 @@ code{font-family:ui-monospace,monospace;background:rgba(127,127,127,.12);padding
 #stamp{color:var(--muted);font-size:.85rem}
 #game{border:1px solid var(--accent);border-radius:8px;padding:12px;margin:16px 0}#game[hidden]{display:none}
 button.join{font:inherit;font-size:.85rem;padding:1px 10px;border-radius:6px;border:1px solid var(--accent);background:none;
-color:var(--accent);cursor:pointer}#where{font-family:ui-monospace,monospace}#msgs{max-height:260px;overflow-y:auto;font-size:.95rem;margin:4px 0 8px}
+color:var(--accent);cursor:pointer}#where{font-family:ui-monospace,monospace}td.ping{color:var(--muted);white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}#msgs{max-height:260px;overflow-y:auto;font-size:.95rem;margin:4px 0 8px}
 .m{padding:2px 0;overflow-wrap:anywhere}.m .t{color:var(--muted);font-size:.8rem;margin-right:6px}.m b{margin-right:4px}
 .say{display:flex;gap:6px;flex-wrap:wrap}.say input{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;
 background:var(--bg);color:var(--fg)}#nm,#pw{width:9em}#tx{flex:1;min-width:12em}.say button{font:inherit;padding:4px 12px;border-radius:6px;
@@ -470,14 +482,27 @@ function tick(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0);const s=Ma
 function row(g){const p=g.players+(g.max_players?'/'+g.max_players:'');
   return '<tr><td class=g>'+esc(gname(g.game))+(g.version?' <span class=ver>v'+esc(g.version)+'</span>':'')+'</td><td>'+esc(g.title)+
   (g.name?' · '+esc(g.name):'')+(g.note?'<div class=note>'+esc(g.note)+'</div>':'')+'</td><td class=addr>'+(g.locked?'&#128274; password':esc(g.host)+':'+g.port)+
-  '</td><td>'+p+'</td><td class=age>'+age(g.age_s)+'</td><td><button class=join data-id="'+esc(g.id)+'" data-locked='+(g.locked?1:0)+' data-title="'+esc(g.title)+'">Join</button></td></tr>';}
+  '</td><td class=ping data-id="'+esc(g.id)+'"></td><td>'+p+'</td><td class=age>'+age(g.age_s)+'</td><td><button class=join data-id="'+esc(g.id)+'" data-locked='+(g.locked?1:0)+' data-title="'+esc(g.title)+'">Join</button></td></tr>';}
 async function refresh(){try{
   if(!cats.length)cats=(await (await fetch('/api/categories')).json()).categories;
   const games=(await (await fetch('/api/games')).json()).games;
   document.querySelectorAll('section').forEach(s=>{const mine=games.filter(g=>g.category===s.dataset.cat);
-    s.querySelector('tbody').innerHTML=mine.length?mine.map(row).join(''):'<tr class=none><td colspan=6>no games running</td></tr>';});
+    s.querySelector('tbody').innerHTML=mine.length?mine.map(row).join(''):'<tr class=none><td colspan=7>no games running</td></tr>';});
+  pingAll(games);
   mark();document.getElementById('stamp').textContent='updated '+new Date().toLocaleTimeString();
 }catch(e){document.getElementById('stamp').textContent='matchmaker unreachable — retrying';}}
+// ping: the round trip from THIS browser to each host's ping responder (sgw announce), as iGOR shows it. The first
+// request opens the connection; the second, on the same kept-alive connection, is one round trip.
+const pings={};
+async function pingOne(host,port){const u='http://'+host+':'+port+'/ping';
+  try{await fetch(u,{cache:'no-store'});const t=performance.now();await fetch(u,{cache:'no-store'});return Math.round(performance.now()-t);}
+  catch(e){return null}}
+function showPing(id){const c=document.querySelector('td.ping[data-id="'+id+'"]'),p=pings[id];
+  if(c)c.textContent=!p?'':p.ms==null?'–':p.ms+' ms';}
+function pingAll(games){for(const g of games){if(!g.host||!g.ping_port)continue;const p=pings[g.id];
+  if(p&&Date.now()-p.t<30000){showPing(g.id);continue}
+  pings[g.id]={ms:p?p.ms:null,t:Date.now()};showPing(g.id);
+  pingOne(g.host,g.ping_port).then(ms=>{pings[g.id]={ms,t:Date.now()};showPing(g.id);});}}
 let lastId=0,cur=null;   // cur: the game this page has joined {id, member}
 function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
 const $=id=>document.getElementById(id);
@@ -501,7 +526,8 @@ $('joinf').addEventListener('submit',async ev=>{ev.preventDefault();if(!cur)retu
   try{const r=await fetch('/api/games/'+cur.id+'/join',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:$('nm').value,password:$('pw').value})});const j=await r.json();
     if(!r.ok){$('chaterr').textContent=j.error||'not joined';return;}
-    cur.member=j.member;$('where').textContent=j.host+':'+j.port;$('joinf').hidden=true;$('inside').hidden=false;chat();
+    cur.member=j.member;$('where').textContent=j.host+':'+j.port;
+    if(j.ping_port)pingOne(j.host,j.ping_port).then(ms=>{if(ms!=null)$('where').textContent=j.host+':'+j.port+' (ping '+ms+' ms)';});$('joinf').hidden=true;$('inside').hidden=false;chat();
   }catch(e){$('chaterr').textContent='matchmaker unreachable';}});
 $('say').addEventListener('submit',async ev=>{ev.preventDefault();if(!cur||!cur.member)return;$('chaterr').textContent='';
   try{const r=await fetch('/api/games/'+cur.id+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},

@@ -98,6 +98,11 @@ A host can add one line that players see under the session's title, for example
 Notes are kept to 120 characters on one line, and appear in `sgw list --json` and on the page.
 
 ## Passwords and chat (as on iGOR)
+Each game shows its **ping**: the round trip from *your* machine to the host. While a game is listed, `sgw announce`
+answers pings on a TCP port of its own (`--ping-port`, default any free port; open it in the host's firewall
+along with the game's port). The page times it from your browser; `sgw list --json` adds `ping_ms`. A passworded
+game's ping appears once you have joined it.
+
 Any number of games can run at once, on any day. There is **no lobby chat**: bad actors who are not in a game have
 nothing to read or write. Press **Join** on a game (on the page, or `sgw join --id <id>`) to see its address and its
 chat, which only that game's players share (the newest 200 lines, one message a second per address). The chat ends

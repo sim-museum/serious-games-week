@@ -285,6 +285,46 @@ class MatchmakerTest(unittest.TestCase):
         self.assertIn("Cli: hello", run("chat", "--id", g["id"], "--token", tok).stdout)
         self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
 
+    def test_ping_responder_is_timed_and_listed(self):
+        import sgw
+        srv = sgw.ping_responder(0)
+        pp = srv.server_address[1]
+        req = urllib.request.Request("http://127.0.0.1:%d/ping" % pp)
+        with urllib.request.urlopen(req) as r:          # what the page fetches: 204, open to any origin
+            self.assertEqual((r.status, r.headers["Access-Control-Allow-Origin"]), (204, "*"))
+        ms = sgw.ping_ms("127.0.0.1", pp)
+        self.assertIsNotNone(ms)
+        self.assertLess(ms, 50)
+        g = self.start(title="Pinged", ping_port=pp)
+        row = [x for x in self.call("GET", "/api/games?game=ma")[1]["games"] if x["id"] == g["id"]][0]
+        self.assertEqual(row["ping_port"], pp)
+        self.assertIsNotNone(sgw.add_pings([row])[0]["ping_ms"])
+        srv.shutdown(); srv.server_close()
+        self.assertIsNone(sgw.ping_ms("127.0.0.1", pp, timeout=0.5))     # a host that has gone: no ping, no hang
+        self.assertEqual(self.call("POST", "/api/games", {"game": "ma", "port": 1, "tz": "UTC", "ping_port": 70000})[0], 400)
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
+
+    def test_locked_game_ping_port_only_after_join(self):
+        g = self.start(title="Locked ping", password="pw", ping_port=5555)
+        row = [x for x in self.call("GET", "/api/games?game=ma")[1]["games"] if x["id"] == g["id"]][0]
+        self.assertEqual(row["ping_port"], 0)
+        self.assertEqual(self.call("POST", "/api/games/%s/join" % g["id"], {"name": "A", "password": "pw"})[1]["ping_port"], 5555)
+        self.call("DELETE", "/api/games/" + g["id"], {"token": g["token"]})
+
+    def test_announce_runs_a_ping_responder(self):
+        import subprocess, sys
+        env = dict(os.environ, SGW_URL=self.base)
+        p = subprocess.Popen([sys.executable, os.path.join(HERE, "sgw.py"), "announce", "--game", "ma", "--port", "4321",
+                              "--title", "Announced"], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.assertIn("listed as", p.stdout.readline())
+        row = [x for x in self.call("GET", "/api/games?game=ma")[1]["games"] if x["title"] == "Announced"][0]
+        self.assertGreater(row["ping_port"], 0)
+        r = subprocess.run([sys.executable, os.path.join(HERE, "sgw.py"), "list", "--game", "ma", "--json"], env=env,
+                           capture_output=True, text=True, timeout=20)
+        mine = [x for x in json.loads(r.stdout) if x["title"] == "Announced"][0]
+        self.assertIsNotNone(mine["ping_ms"])
+        p.stdin.close(); p.wait(10)
+
     def test_page_lists_every_category_equally(self):
         with urllib.request.urlopen(self.base + "/") as r:
             page = r.read().decode()

@@ -6,14 +6,16 @@ The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.c
   sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgw/url)
   sgw today                                    today's category where you are (and its games)
   sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
-                                               (passworded games: --json only, or named on stderr)
+                                               (passworded games: --json only, or named on stderr); --json adds
+                                               ping_ms, the round trip to each host from here (--no-ping: skip)
   sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V --build B --note T]
                                                list this host's game and keep it listed (heartbeat) until
                                                killed (SIGTERM/SIGINT) or stdin closes -- the game spawns it when
                                                it starts hosting and kills it when the session ends. Any game,
                                                any day (today's category is a suggestion).
                                                --password P (or $SGW_PASSWORD): listed with a lock and no address;
-                                               players join with the password.
+                                               players join with the password. While listed it answers pings on a
+                                               TCP port (--ping-port, default any free one) that players time.
   sgw join --id ID [--password P --name N]     join a listed game: prints "host port member-token"
   sgw chat --id ID --token T [--follow]        that game's chat (there is no lobby chat; T from join)
   sgw say --id ID --token T "text"             say something to that game's players
@@ -23,11 +25,13 @@ import argparse
 import json
 import os
 import signal
+import socket
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 __version__ = "1.0.0"
 
@@ -77,6 +81,58 @@ def call(base, method, path, body=None, timeout=10):
             return e.code, {"error": str(e)}
 
 
+def ping_responder(port=0):
+    """While a game is listed, answer GET /ping (any origin) on a TCP port, so a player's page or `sgw list` can time
+    the round trip to this host, as iGOR shows a ping per game. -> the server, or None if the port cannot be bound."""
+    class Ping(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"          # keep-alive: a browser's second request is one clean round trip
+
+        def do_GET(self):
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+    try:
+        srv = ThreadingHTTPServer(("", port), Ping)
+    except OSError:
+        return None
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def ping_ms(host, port, timeout=1.0, tries=3):
+    """Round trip from here to a host's ping responder in ms: the best of `tries` TCP connects (a connect is one
+    SYN / SYN-ACK round trip); None if it does not answer."""
+    best = None
+    for _ in range(tries):
+        t = time.perf_counter()
+        try:
+            socket.create_connection((host, port), timeout).close()
+        except OSError:
+            break
+        d = (time.perf_counter() - t) * 1000.0
+        best = d if best is None else min(best, d)
+    return None if best is None else round(best, 1)
+
+
+def add_pings(games):
+    """ping_ms on every game whose address and ping port are known (in parallel: one slow host does not stall the list)."""
+    ts = []
+    for g in games:
+        g["ping_ms"] = None
+        if g.get("host") and g.get("ping_port"):
+            t = threading.Thread(target=lambda g=g: g.__setitem__("ping_ms", ping_ms(g["host"], g["ping_port"])), daemon=True)
+            t.start(); ts.append(t)
+    for t in ts:
+        t.join(4)
+    return games
+
+
 def where():
     tz = local_tz()
     return {"tz": tz} if tz else {"utc_offset_min": utc_offset_min()}
@@ -92,6 +148,7 @@ def main(argv=None):
     # --build: the git commit this game was built from ($SGW_BUILD). Only sessions built from the same commit are
     # listed, so two different builds never meet (version skew); the matchmaker reports how many it left out.
     l.add_argument("--build", default=os.environ.get("SGW_BUILD", ""))
+    l.add_argument("--no-ping", dest="ping", action="store_false", help="--json without timing each host (ping_ms)")
     # There is no lobby chat: `join` a game (its password if it has one) for its address and a member token, then
     # `chat`/`say` inside that game with the token.
     me = os.environ.get("SGW_NAME") or os.environ.get("USER", "")
@@ -112,6 +169,8 @@ def main(argv=None):
     a.add_argument("--note", default="", help="one line other players see, e.g. \"beginners welcome\"")
     a.add_argument("--password", default=os.environ.get("SGW_PASSWORD", ""),
                    help="players must give it to see the address and chat ($SGW_PASSWORD); empty = open game")
+    a.add_argument("--ping-port", type=int, default=int(os.environ.get("SGW_PING_PORT") or 0),
+                   help="TCP port for the ping responder ($SGW_PING_PORT; default: any free port)")
     a.add_argument("--every", type=float, default=30.0)
     args = ap.parse_args(argv)
 
@@ -150,7 +209,7 @@ def main(argv=None):
                 print("sgw: %d %s game(s) not shown: built from a different commit than yours (%s)"
                       % (j["hidden_other_builds"], args.game, args.build), file=sys.stderr)
             if args.json:
-                print(json.dumps(j["games"]))
+                print(json.dumps(add_pings(j["games"]) if args.ping else j["games"]))
             else:
                 # the "host port players title" lines the games parse: a passworded game has no address to print
                 locked = [g for g in j["games"] if g.get("locked")]
@@ -191,6 +250,11 @@ def main(argv=None):
                     note=args.note, password=args.password)
         if args.host:
             body["host"] = args.host
+        ping = ping_responder(args.ping_port)
+        if ping:
+            body["ping_port"] = ping.server_address[1]
+        else:
+            print("sgw: ping port %d busy: listed without a ping" % args.ping_port, file=sys.stderr)
         code, j = call(base, "POST", "/api/games", body)
         if code != 201:
             print("sgw: %s" % j.get("error", "refused (%d)" % code), file=sys.stderr)
