@@ -6,7 +6,7 @@ The matchmaker URL is the player's choice: $SGW_URL, else the first line of ~/.c
   sgw url https://games.example.org            choose the matchmaker (writes ~/.config/sgw/url)
   sgw today                                    today's category where you are (and its games)
   sgw list --game ma [--json]                  joinable sessions: one "host port players title" line each
-                                               (passworded games: --json only, or named on stderr); --json adds
+                                               (passworded games: named on stderr; --json --locked lists them); --json adds
                                                ping_ms, the round trip to each host from here (--no-ping: skip)
   sgw announce --game ma --port 47734 --title "Spring Offensive" [--name N --players N --max N --version V --build B --note T]
                                                list this host's game and keep it listed (heartbeat) until
@@ -149,6 +149,7 @@ def main(argv=None):
     # listed, so two different builds never meet (version skew); the matchmaker reports how many it left out.
     l.add_argument("--build", default=os.environ.get("SGW_BUILD", ""))
     l.add_argument("--no-ping", dest="ping", action="store_false", help="--json without timing each host (ping_ms)")
+    l.add_argument("--locked", action="store_true", help="--json also lists passworded games (locked, no address)")
     # There is no lobby chat: `join` a game (its password if it has one) for its address and a member token, then
     # `chat`/`say` inside that game with the token.
     me = os.environ.get("SGW_NAME") or os.environ.get("USER", "")
@@ -208,17 +209,18 @@ def main(argv=None):
             if j.get("hidden_other_builds"):
                 print("sgw: %d %s game(s) not shown: built from a different commit than yours (%s)"
                       % (j["hidden_other_builds"], args.game, args.build), file=sys.stderr)
+            # a passworded game has no address until joined, so the games' own lists (text, and --json without
+            # --locked) leave it out: an older game would otherwise try to connect to ":0"
+            locked = [g for g in j["games"] if g.get("locked")]
+            if locked and not (args.json and args.locked):
+                print("sgw: %d %s game(s) need a password: sgw join --id <id> --password <pw> (%s)"
+                      % (len(locked), args.game, ", ".join(g["id"] for g in locked)), file=sys.stderr)
+            games = j["games"] if (args.json and args.locked) else [g for g in j["games"] if not g.get("locked")]
             if args.json:
-                print(json.dumps(add_pings(j["games"]) if args.ping else j["games"]))
+                print(json.dumps(add_pings(games) if args.ping else games))
             else:
-                # the "host port players title" lines the games parse: a passworded game has no address to print
-                locked = [g for g in j["games"] if g.get("locked")]
-                if locked:
-                    print("sgw: %d %s game(s) need a password: sgw join --id <id> --password <pw> (%s)"
-                          % (len(locked), args.game, ", ".join(g["id"] for g in locked)), file=sys.stderr)
-                for g in j["games"]:
-                    if not g.get("locked"):
-                        print("%s %d %d %s" % (g["host"], g["port"], g["players"], g["title"].replace("\n", " ")))
+                for g in games:
+                    print("%s %d %d %s" % (g["host"], g["port"], g["players"], g["title"].replace("\n", " ")))
             return 0
         if args.cmd == "join":
             code, j = call(base, "POST", "/api/games/%s/join" % args.id, {"name": args.name, "password": args.password})

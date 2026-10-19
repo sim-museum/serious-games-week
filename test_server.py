@@ -276,6 +276,8 @@ class MatchmakerTest(unittest.TestCase):
         r = run("list", "--game", "ma")
         self.assertNotIn("4777", r.stdout)
         self.assertIn(g["id"], r.stderr)
+        self.assertNotIn(g["id"], run("list", "--game", "ma", "--json").stdout)     # older games never see it
+        self.assertIn(g["id"], run("list", "--game", "ma", "--json", "--locked").stdout)
         self.assertEqual(run("join", "--id", g["id"], "--name", "Cli").returncode, 3)
         r = run("join", "--id", g["id"], "--name", "Cli", "--password", "pw")
         host, port, tok = r.stdout.split()
