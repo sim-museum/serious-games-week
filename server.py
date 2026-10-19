@@ -498,10 +498,10 @@ async function pingOne(host,port){const u='http://'+host+':'+port+'/ping';
   try{await fetch(u,{cache:'no-store'});const t=performance.now();await fetch(u,{cache:'no-store'});return Math.round(performance.now()-t);}
   catch(e){return null}}
 function showPing(id){const c=document.querySelector('td.ping[data-id="'+id+'"]'),p=pings[id];
-  if(c)c.textContent=!p?'':p.ms==null?'–':p.ms+' ms';}
+  if(c)c.textContent=!p?'':p.pending?'…':p.ms==null?'–':p.ms+' ms';}   // – : the host does not answer pings
 function pingAll(games){for(const g of games){if(!g.host||!g.ping_port)continue;const p=pings[g.id];
   if(p&&Date.now()-p.t<30000){showPing(g.id);continue}
-  pings[g.id]={ms:p?p.ms:null,t:Date.now()};showPing(g.id);
+  pings[g.id]={ms:p?p.ms:null,t:Date.now(),pending:!p};showPing(g.id);
   pingOne(g.host,g.ping_port).then(ms=>{pings[g.id]={ms,t:Date.now()};showPing(g.id);});}}
 let lastId=0,cur=null;   // cur: the game this page has joined {id, member}
 function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
