@@ -30,7 +30,7 @@ repository:
 | Monday | pokerIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/main/MON/pokerIQ) (`MON/pokerIQ`) | yes |
 | Tuesday | MiG Alley (Rowan, native Linux port) | [mig_src](https://github.com/sim-museum/mig_src) | yes |
 | Tuesday | Battle of Britain (Rowan, native Linux port) | [BOB_Src](https://github.com/sim-museum/BOB_Src) | yes |
-| Wednesday | chessIQ (Kramnik's no-castling chess) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/main/WED/chessIQ) (`WED/chessIQ`) | yes |
+| Wednesday | Kramnik chess (no castling, capture anything) | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/main/WED/kramnikChess) (`WED/kramnikChess`) | yes |
 | Thursday | Julia Racer | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/julia-racer/THU) (`THU`, branch `julia-racer`) | yes |
 | Friday | bridgeIQ | [serious-games-lab](https://github.com/sim-museum/serious-games-lab/tree/main/FRI/bridgeIQ) (`FRI/bridgeIQ`) | yes |
 | Saturday | FreeFalcon | [freefalcon-central](https://github.com/sim-museum/freefalcon-central) | yes |
