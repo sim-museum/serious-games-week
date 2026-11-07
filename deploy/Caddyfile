@@ -1,0 +1,6 @@
+# HTTPS front end for an internet matchmaker. Caddy gets and renews the certificate by itself.
+#   apt install caddy; cp deploy/Caddyfile /etc/caddy/Caddyfile (put your own name in); systemctl reload caddy
+# Open TCP 80 and 443 on the server. Players then run:  sgw url https://games.example.org
+games.example.org {
+	reverse_proxy 127.0.0.1:8090
+}

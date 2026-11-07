@@ -1,0 +1,25 @@
+# Serious Games Week matchmaker on an internet server (a small VPS or a home server), behind an HTTPS front end.
+# Install as root:
+#   useradd --system --create-home --home-dir /var/lib/sgw sgw
+#   git clone https://github.com/sim-museum/serious-games-week /opt/serious-games-week
+#   cp /opt/serious-games-week/deploy/sgw-internet.service /etc/systemd/system/sgw.service
+#   systemctl daemon-reload && systemctl enable --now sgw
+# It listens on 127.0.0.1:8090 only; the front end (deploy/Caddyfile) is the public side and names each caller in
+# X-Forwarded-For, which --trust-proxy 127.0.0.1 accepts from it alone.
+[Unit]
+Description=Serious Games Week matchmaker (internet, behind an HTTPS proxy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sgw
+ExecStart=/usr/bin/python3 /opt/serious-games-week/server.py --bind 127.0.0.1 --port 8090 --trust-proxy 127.0.0.1 --db /var/lib/sgw/sgw.db
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sgw
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

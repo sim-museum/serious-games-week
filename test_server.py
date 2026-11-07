@@ -70,6 +70,42 @@ class MatchmakerTest(unittest.TestCase):
         self.assertNotIn("lan_host", st.list("ma")[0][0])
         self.assertEqual(st.join("g1", "", "p", viewer="203.0.113.7")[0]["host"], "192.168.1.20")
 
+    def test_behind_a_trusted_proxy_the_forwarded_address_counts(self):   # C12: a matchmaker on an internet server
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(
+            server.Store(os.path.join(self.tmp, "proxy.db")), self.cats, trusted_proxies=["127.0.0.1"]))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d" % srv.server_address[1]
+
+        def call(method, path, body=None, xff=None):
+            h = {"Content-Type": "application/json"}
+            if xff:
+                h["X-Forwarded-For"] = xff
+            req = urllib.request.Request(base + path, method=method, headers=h,
+                                         data=json.dumps(body).encode() if body is not None else None)
+            with urllib.request.urlopen(req) as r:
+                return json.loads(r.read())
+        try:
+            game, tz, _ = self.today_game_and_tz()
+            call("POST", "/api/games", {"game": game, "title": "w", "port": 47624, "tz": tz, "host": "192.168.1.20"},
+                 xff="10.0.0.9, 203.0.113.7")                       # the proxy appends what it saw: the last entry
+            far = call("GET", "/api/games?game=" + game, xff="198.51.100.9")["games"]
+            near = call("GET", "/api/games?game=" + game, xff="203.0.113.7")["games"]
+            self.assertEqual([g["host"] for g in far], ["203.0.113.7"])   # from elsewhere: the public address
+            self.assertEqual([g["host"] for g in near], ["192.168.1.20"])  # behind the same router: the LAN one
+        finally:
+            srv.shutdown()
+        # without trust, a caller's X-Forwarded-For is ignored: the default server sees loopback, keeps the reported
+        game, tz, _ = self.today_game_and_tz()
+        req = urllib.request.Request(self.base + "/api/games", method="POST",
+                                     headers={"Content-Type": "application/json", "X-Forwarded-For": "203.0.113.66"},
+                                     data=json.dumps({"game": game, "title": "nt", "port": 47625, "tz": tz,
+                                                      "host": "192.168.1.30"}).encode())
+        with urllib.request.urlopen(req):
+            pass
+        code, j = self.call("GET", "/api/games?game=" + game)
+        self.assertIn("192.168.1.30", [g["host"] for g in j["games"]])
+        self.assertNotIn("203.0.113.66", [g["host"] for g in j["games"]])
+
     def test_week_has_seven_categories(self):
         code, j = self.call("GET", "/api/categories")
         self.assertEqual(code, 200)

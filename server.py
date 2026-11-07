@@ -245,13 +245,26 @@ def pw_ok(password, stored):
     return hmac.compare_digest(hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 20000).hex(), h)
 
 
-def make_handler(store, categories):
+def make_handler(store, categories, trusted_proxies=()):
+    """trusted_proxies: addresses of reverse proxies (an HTTPS front end on an internet server). For a request from one
+    of them the caller is the last X-Forwarded-For entry -- the address the proxy saw; anyone else's X-Forwarded-For
+    is ignored, so a player cannot claim another address."""
+    trusted = set(trusted_proxies or ())
     games_to_cat = {g["id"]: c for c in categories for g in c["games"]}
     last_said = {}                 # address -> time of its last chat message (1 per second)
     said_lock = threading.Lock()
 
     class H(BaseHTTPRequestHandler):
         server_version = "sgw/1"
+
+        def peer(self):
+            """The caller's address: the TCP peer, or behind a trusted reverse proxy the address the proxy saw."""
+            ip = self.client_address[0]
+            if ip in trusted:
+                fwd = [x.strip() for x in (self.headers.get("X-Forwarded-For") or "").split(",") if x.strip()]
+                if fwd:
+                    return fwd[-1]
+            return ip
 
         def log_message(self, fmt, *a):
             if os.environ.get("SGW_LOG"):
@@ -285,7 +298,7 @@ def make_handler(store, categories):
                 c = categories[wd]
                 return self._json(200, {"weekday": WEEKDAYS[wd], "category": c["id"], "name": c["name"], "games": c["games"]})
             if u.path == "/api/games":
-                games, hidden = store.list(q.get("game"), q.get("build"), viewer=self.client_address[0])
+                games, hidden = store.list(q.get("game"), q.get("build"), viewer=self.peer())
                 return self._json(200, {"games": games, "hidden_other_builds": hidden})
             if u.path == "/api/chat":
                 return self._json(410, {"error": NO_LOBBY})
@@ -332,8 +345,8 @@ def make_handler(store, categories):
                 gid, token, now = secrets.token_hex(6), secrets.token_hex(16), time.time()
                 store.add({"id": gid, "token": token, "game": game, "category": cat["id"],
                            "title": str(b.get("title") or game)[:80],
-                           "host": announce_addresses(self.client_address[0], str(b.get("host") or ""))[0],
-                           "lan_host": announce_addresses(self.client_address[0], str(b.get("host") or ""))[1],
+                           "host": announce_addresses(self.peer(), str(b.get("host") or ""))[0],
+                           "lan_host": announce_addresses(self.peer(), str(b.get("host") or ""))[1],
                            "port": port, "version": str(b.get("version") or "")[:40], "players": int(b.get("players") or 1),
                            "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
                            "name": str(b.get("name") or "")[:40], "build": str(b.get("build") or "")[:64],
@@ -348,7 +361,7 @@ def make_handler(store, categories):
                 name = " ".join(str(b.get("name") or "").split())[:24]
                 if not name:
                     return self._json(400, {"error": "name required"})
-                j, err = store.join(u.path.split("/")[3], str(b.get("password") or "")[:64], name, viewer=self.client_address[0])
+                j, err = store.join(u.path.split("/")[3], str(b.get("password") or "")[:64], name, viewer=self.peer())
                 if err:
                     return self._json(404 if err == "no such game" else 403, {"error": err})
                 return self._json(200, j)
@@ -360,7 +373,7 @@ def make_handler(store, categories):
                 text = " ".join(str(b.get("text") or "").split())[:300]
                 if not text:
                     return self._json(400, {"error": "text required"})
-                addr = self.client_address[0]
+                addr = self.peer()
                 with said_lock:
                     now = time.time()
                     if now - last_said.get(addr, 0) < 1.0:
@@ -386,7 +399,7 @@ def make_handler(store, categories):
             return self._json(404, {"error": "not found"})
 
         def _page(self):
-            live, _ = store.list(viewer=self.client_address[0])
+            live, _ = store.list(viewer=self.peer())
             host_hdr = self.headers.get("Host") or ("%s:%d" % self.server.server_address[:2])
             rows = []
             for c in categories:
@@ -566,9 +579,13 @@ def main():
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--db", default=os.path.join(HERE, "sgw.db"))
     ap.add_argument("--categories", default=os.path.join(HERE, "categories.json"))
+    ap.add_argument("--trust-proxy", action="append", default=[], metavar="ADDR",
+                    help="a reverse proxy whose X-Forwarded-For names the caller (repeatable; e.g. 127.0.0.1 behind "
+                         "Caddy or nginx on the same server). Without it the TCP peer is the caller, as on a LAN.")
     a = ap.parse_args()
-    srv = ThreadingHTTPServer((a.bind, a.port), make_handler(Store(a.db), load_categories(a.categories)))
-    print("Serious Games Week matchmaker on http://%s:%d/" % (a.bind, a.port), flush=True)
+    srv = ThreadingHTTPServer((a.bind, a.port), make_handler(Store(a.db), load_categories(a.categories), a.trust_proxy))
+    print("Serious Games Week matchmaker on http://%s:%d/%s" % (a.bind, a.port,
+          " (callers named by X-Forwarded-For from %s)" % ", ".join(a.trust_proxy) if a.trust_proxy else ""), flush=True)
     srv.serve_forever()
 
 

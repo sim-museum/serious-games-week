@@ -38,7 +38,14 @@ repository:
 
 ## Run a matchmaker
     python3 server.py --port 8080 --db sgw.db      # Python 3.9+, no other dependencies
-Put it behind any HTTPS reverse proxy if it faces the internet. Players point their games at it.
+The same server runs on a LAN or on the internet; only how it is reached differs (below). Players point their
+games at it with `sgw url`.
+
+**Addresses.** The matchmaker lists each hosted game at the address it *sees* the host connect from, not the one the
+host reports. On a LAN that is the host's LAN address. On the internet it is the public address of the host's
+router, which is what players elsewhere need. Players behind the same router as the host get its LAN address
+instead, because many routers do not loop their public address back to the LAN. A host on the matchmaker's own
+machine is listed at the address it reports.
 
 ## Host it on your LAN (systemd user service)
     cp deploy/sgw.service ~/.config/systemd/user/
@@ -47,6 +54,26 @@ Put it behind any HTTPS reverse proxy if it faces the internet. Players point th
 It listens on port 8090. The web page (`http://<this machine>:8090/`) is the live lobby: every day's category,
 today's highlighted with a countdown to its end in the viewer's own time zone, and every running session with game,
 title, host player, address, players and age. It refreshes every 10 s.
+
+## Host it on the internet
+For a small rented server (any Linux with Python 3.9+), or a home server with TCP 443 forwarded to it:
+
+    useradd --system --create-home --home-dir /var/lib/sgw sgw
+    git clone https://github.com/sim-museum/serious-games-week /opt/serious-games-week
+    cp /opt/serious-games-week/deploy/sgw-internet.service /etc/systemd/system/sgw.service
+    systemctl daemon-reload && systemctl enable --now sgw
+    apt install caddy && cp /opt/serious-games-week/deploy/Caddyfile /etc/caddy/Caddyfile   # edit the name in it
+    systemctl reload caddy
+
+- **Front end.** The matchmaker listens on 127.0.0.1:8090 only. Caddy serves HTTPS and renews its own certificate.
+  It passes each caller's address in X-Forwarded-For, and `--trust-proxy 127.0.0.1` accepts that header from Caddy
+  alone, so a player cannot claim another address.
+- **Open ports.** Open TCP 80 and 443 on the server.
+- **Players** run `sgw url https://<your name>`.
+- **The games' own traffic** goes straight between players, not through the matchmaker. Each host must forward its
+  game's UDP port on its router (MiG Alley: 47624; see the game's manual).
+- **No front end.** `server.py --bind 0.0.0.0 --port 8090` also works, over plain HTTP. Leave out `--trust-proxy`
+  then.
 
 ## Install sgw (every player's machine)
 `sgw` is the small client the games call. It uses only the Python standard library (3.8+):
