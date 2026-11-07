@@ -100,6 +100,8 @@ class Store:
                 self.db.execute("ALTER TABLE games ADD COLUMN note TEXT DEFAULT ''")
             if "ping_port" not in cols:  # older databases: add the host's ping responder port (sgw announce)
                 self.db.execute("ALTER TABLE games ADD COLUMN ping_port INTEGER DEFAULT 0")
+            if "lan_host" not in cols:  # older databases: add the address the host reported (C12 NET-WAN-1)
+                self.db.execute("ALTER TABLE games ADD COLUMN lan_host TEXT DEFAULT ''")
             if "pwhash" not in cols:    # older databases: add the optional password (salted hash, never the text)
                 self.db.execute("ALTER TABLE games ADD COLUMN pwhash TEXT DEFAULT ''")
             self.db.commit()
@@ -118,9 +120,9 @@ class Store:
     def add(self, row):
         with self.lock:
             self.db.execute("INSERT INTO games (id,token,game,category,title,host,port,version,players,max_players,"
-                            "started,seen,name,build,note,pwhash,ping_port) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
-                            ":players,:max_players,:started,:seen,:name,:build,:note,:pwhash,:ping_port)",
-                            dict({"pwhash": "", "ping_port": 0}, **row))
+                            "started,seen,name,build,note,pwhash,ping_port,lan_host) VALUES (:id,:token,:game,:category,:title,:host,:port,:version,"
+                            ":players,:max_players,:started,:seen,:name,:build,:note,:pwhash,:ping_port,:lan_host)",
+                            dict({"pwhash": "", "ping_port": 0, "lan_host": ""}, **row))
             self.db.commit()
 
     def touch(self, gid, token, players=None):
@@ -137,12 +139,12 @@ class Store:
             self.db.commit()
             return cur.rowcount == 1
 
-    def join(self, gid, password, name):
+    def join(self, gid, password, name, viewer=None):
         """Join a live game: -> ({host, port, member}, None), or (None, "no such game" / "wrong password").
         The member token is the key to the game's chat; a locked game's address is only given here."""
         self.purge()
         with self.lock:
-            r = self.db.execute("SELECT host,port,pwhash,ping_port FROM games WHERE id=?", (gid,)).fetchone()
+            r = self.db.execute("SELECT host,port,pwhash,ping_port,lan_host FROM games WHERE id=?", (gid,)).fetchone()
             if not r:
                 return None, "no such game"
             if r[2] and not pw_ok(password or "", r[2]):
@@ -150,7 +152,7 @@ class Store:
             member = secrets.token_hex(16)
             self.db.execute("INSERT INTO members (gid,token,name,joined) VALUES (?,?,?,?)", (gid, member, name, time.time()))
             self.db.commit()
-        return {"host": r[0], "port": r[1], "member": member, "ping_port": r[3] or 0}, None
+        return {"host": addr_for(viewer, r[0], r[4]), "port": r[1], "member": member, "ping_port": r[3] or 0}, None
 
     def speaker(self, gid, token):
         """The name a token chats under in game gid: a member's, or the host's (its session token); None if neither."""
@@ -180,14 +182,14 @@ class Store:
                                    (gid, since, limit)).fetchall()
         return [{"id": r[0], "ts": r[1], "name": r[2], "text": r[3]} for r in reversed(rows)]
 
-    def list(self, game=None, build=None):
+    def list(self, game=None, build=None, viewer=None):
         """Sessions of `game`. With `build` (the caller's git commit), only sessions built from that same commit are
         returned, so two different builds are never matched (version skew); the second value counts the others.
         A session that announced no build cannot be checked and counts as different. Without `build` (an older
         client) everything is listed, as before."""
         self.purge()
         q = ("SELECT id,game,category,title,host,port,version,players,max_players,started,name,build,note,"
-             "pwhash != '',ping_port FROM games")
+             "pwhash != '',ping_port,lan_host FROM games")
         args = ()
         if game:
             q += " WHERE game=?"
@@ -196,7 +198,7 @@ class Store:
         with self.lock:
             rows = self.db.execute(q, args).fetchall()
         keys = ["id", "game", "category", "title", "host", "port", "version", "players", "max_players", "started", "name",
-                "build", "note", "locked", "ping_port"]
+                "build", "note", "locked", "ping_port", "lan_host"]
         out = [dict(zip(keys, r)) for r in rows]
         hidden = 0
         if build:
@@ -209,9 +211,28 @@ class Store:
             g["age_s"] = int(now - g["started"])
             g["locked"] = bool(g["locked"])
             g["ping_port"] = g["ping_port"] or 0
+            g["host"] = addr_for(viewer, g["host"], g.pop("lan_host") or "")   # C12: same network -> LAN address
             if g["locked"]:              # a passworded game's address is given only to a player who joins (POST .../join)
                 g["host"], g["port"], g["ping_port"] = "", 0, 0
         return out, hidden
+
+
+def announce_addresses(seen, reported):
+    """C12 NET-WAN-1 (a): the address joiners are given is the one the matchmaker SEES -- behind a home router that is
+    the router's public address -- not the one the host reports, which is its LAN address and useless from outside.
+    A host on the matchmaker's own machine is seen as loopback; then the reported address is all there is. The
+    reported address is kept too, for players behind the same router (many routers do not loop the public address
+    back to the LAN). -> (host, lan_host)"""
+    seen, reported = (seen or "").strip(), (reported or "").strip()
+    loop = seen.startswith("127.") or seen in ("::1", "localhost", "")
+    host = (reported or seen) if loop else seen
+    return host[:64], (reported or seen)[:64]
+
+
+def addr_for(viewer, host, lan_host):
+    """The address one viewer should use: the LAN address when the viewer comes from the same public address as the
+    host (same home network), else the public one."""
+    return lan_host if (viewer and lan_host and viewer == host) else host
 
 
 def pw_hash(password):
@@ -264,7 +285,7 @@ def make_handler(store, categories):
                 c = categories[wd]
                 return self._json(200, {"weekday": WEEKDAYS[wd], "category": c["id"], "name": c["name"], "games": c["games"]})
             if u.path == "/api/games":
-                games, hidden = store.list(q.get("game"), q.get("build"))
+                games, hidden = store.list(q.get("game"), q.get("build"), viewer=self.client_address[0])
                 return self._json(200, {"games": games, "hidden_other_builds": hidden})
             if u.path == "/api/chat":
                 return self._json(410, {"error": NO_LOBBY})
@@ -310,7 +331,9 @@ def make_handler(store, categories):
                     return self._json(400, {"error": "bad ping_port"})
                 gid, token, now = secrets.token_hex(6), secrets.token_hex(16), time.time()
                 store.add({"id": gid, "token": token, "game": game, "category": cat["id"],
-                           "title": str(b.get("title") or game)[:80], "host": str(b.get("host") or self.client_address[0])[:64],
+                           "title": str(b.get("title") or game)[:80],
+                           "host": announce_addresses(self.client_address[0], str(b.get("host") or ""))[0],
+                           "lan_host": announce_addresses(self.client_address[0], str(b.get("host") or ""))[1],
                            "port": port, "version": str(b.get("version") or "")[:40], "players": int(b.get("players") or 1),
                            "max_players": int(b.get("max_players") or 0), "started": now, "seen": now,
                            "name": str(b.get("name") or "")[:40], "build": str(b.get("build") or "")[:64],
@@ -325,7 +348,7 @@ def make_handler(store, categories):
                 name = " ".join(str(b.get("name") or "").split())[:24]
                 if not name:
                     return self._json(400, {"error": "name required"})
-                j, err = store.join(u.path.split("/")[3], str(b.get("password") or "")[:64], name)
+                j, err = store.join(u.path.split("/")[3], str(b.get("password") or "")[:64], name, viewer=self.client_address[0])
                 if err:
                     return self._json(404 if err == "no such game" else 403, {"error": err})
                 return self._json(200, j)
@@ -363,7 +386,7 @@ def make_handler(store, categories):
             return self._json(404, {"error": "not found"})
 
         def _page(self):
-            live, _ = store.list()
+            live, _ = store.list(viewer=self.client_address[0])
             host_hdr = self.headers.get("Host") or ("%s:%d" % self.server.server_address[:2])
             rows = []
             for c in categories:

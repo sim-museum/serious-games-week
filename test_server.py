@@ -53,6 +53,23 @@ class MatchmakerTest(unittest.TestCase):
         wd = server.local_weekday(tz)
         return self.cats[wd]["games"][0]["id"], tz, wd
 
+    def test_addresses_as_seen_with_the_lan_address_for_the_same_network(self):   # C12 NET-WAN-1 (a)
+        self.assertEqual(server.announce_addresses("203.0.113.7", "192.168.1.20"), ("203.0.113.7", "192.168.1.20"))
+        self.assertEqual(server.announce_addresses("127.0.0.1", "192.168.1.20"), ("192.168.1.20", "192.168.1.20"))
+        self.assertEqual(server.announce_addresses("192.168.1.20", ""), ("192.168.1.20", "192.168.1.20"))
+        self.assertEqual(server.addr_for("198.51.100.9", "203.0.113.7", "192.168.1.20"), "203.0.113.7")   # elsewhere
+        self.assertEqual(server.addr_for("203.0.113.7", "203.0.113.7", "192.168.1.20"), "192.168.1.20")   # same router
+        st = server.Store(os.path.join(self.tmp, "wan.db"))
+        host, lan = server.announce_addresses("203.0.113.7", "192.168.1.20")
+        now = time.time()
+        st.add({"id": "g1", "token": "t", "game": "ma", "category": "tue", "title": "x", "host": host, "lan_host": lan,
+                "port": 47624, "version": "", "players": 1, "max_players": 0, "started": now, "seen": now, "name": "",
+                "build": "", "note": ""})
+        self.assertEqual(st.list("ma", viewer="198.51.100.9")[0][0]["host"], "203.0.113.7")
+        self.assertEqual(st.list("ma", viewer="203.0.113.7")[0][0]["host"], "192.168.1.20")
+        self.assertNotIn("lan_host", st.list("ma")[0][0])
+        self.assertEqual(st.join("g1", "", "p", viewer="203.0.113.7")[0]["host"], "192.168.1.20")
+
     def test_week_has_seven_categories(self):
         code, j = self.call("GET", "/api/categories")
         self.assertEqual(code, 200)
